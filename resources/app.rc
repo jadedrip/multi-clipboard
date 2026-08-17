@@ -1,0 +1,41 @@
+// =============================================================
+// 多元剪贴板 Windows 资源文件
+// 用于将应用图标嵌入到可执行文件
+// =============================================================
+
+// 图标资源（位于本工程 resources/icons 目录）
+IDI_ICON1 ICON "icons\\icon.ico"
+
+// 版本信息
+1 VERSIONINFO
+FILEVERSION     1,0,0,0
+PRODUCTVERSION  1,0,0,0
+FILEFLAGSMASK   0x3fL
+#ifdef _DEBUG
+FILEFLAGS       0x1L
+#else
+FILEFLAGS       0x0L
+#endif
+FILEOS          0x40004L
+FILETYPE        0x1L
+FILESUBTYPE     0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404b0"
+        BEGIN
+            VALUE "CompanyName",      "MultiClipboard"
+            VALUE "FileDescription",  "多元剪贴板 - 剪贴板切分工具"
+            VALUE "FileVersion",      "1.0.0"
+            VALUE "InternalName",     "multiclipboard"
+            VALUE "LegalCopyright",   ""
+            VALUE "OriginalFilename", "multiclipboard.exe"
+            VALUE "ProductName",      "多元剪贴板"
+            VALUE "ProductVersion",   "1.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x804, 1200
+    END
+END

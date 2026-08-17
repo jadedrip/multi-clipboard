@@ -1,0 +1,106 @@
+# =============================================================
+# 多元剪贴板（C++20 / Qt6）持续集成
+# 矩阵：Windows（vcpkg + MSVC）、Ubuntu（系统 Qt6 + GCC）
+#
+# 跨平台源文件说明（条件编译，xmake 的 src/** 通配符会编译全部源文件）：
+# - windows_platform.cpp / windows_hotkey_filter.cpp：
+#   Q_OS_WIN 下编译真实实现（含 <windows.h>），其他平台编译空实现
+# - linux_platform.cpp：
+#   Q_OS_LINUX 下编译真实实现（含 X11 头），其他平台编译空实现
+# - 因此每个平台的编译步骤都会编译到全部源文件，用于验证条件编译逻辑正确性
+# =============================================================
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'test/**'
+      - 'resources/**'
+      - 'scripts/**'
+      - 'xmake.lua'
+      - '.github/workflows/build.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'test/**'
+      - 'resources/**'
+      - 'scripts/**'
+      - 'xmake.lua'
+      - '.github/workflows/build.yml'
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 xmake
+        uses: xmake-io/action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      # --------------------------------------------------------
+      # Windows：通过 vcpkg 安装 Qt6（qtbase）
+      # --------------------------------------------------------
+      - name: 缓存 vcpkg 已安装包
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg\installed
+          key: vcpkg-qtbase-${{ runner.os }}
+
+      - name: 安装 Qt6 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          vcpkg install qtbase:x64-windows
+          # 将 Qt 工具目录加入 PATH，供 xmake 定位 Qt SDK
+          "QT_TOOL_BIN=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\tools\Qt6\bin" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      # --------------------------------------------------------
+      # Linux：通过系统包管理器安装 Qt6
+      # 注意：Ubuntu 的 qt6-base-dev 缺失部分 Qt 聚合头（如 QtLogging），
+      # 源码已使用 <QtCore/qlogging.h> 等子路径头兼容（见 src/utils/logger.h）
+      # --------------------------------------------------------
+      - name: 安装 Qt6 (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qt6-base-dev
+
+      - name: 配置工程
+        shell: pwsh
+        run: |
+          if ($env:QT_TOOL_BIN) {
+            $env:PATH = "$env:QT_TOOL_BIN;" + $env:PATH
+          }
+          xmake f -y -m release
+
+      - name: 编译
+        shell: pwsh
+        run: xmake -y
+
+      - name: 运行单元测试
+        shell: pwsh
+        run: |
+          xmake r test_content_parser -o test_result.txt,txt
+          Get-Content test_result.txt
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-result-${{ matrix.os }}
+          path: test_result.txt
+          if-no-files-found: ignore

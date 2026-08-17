@@ -1,0 +1,12 @@
+<RCC>
+    <!-- 应用图标资源（位于本工程 resources/icons 目录） -->
+    <qresource prefix="/icons">
+        <file alias="icon_16x16.png">icons/icon_16x16.png</file>
+        <file alias="icon_24x24.png">icons/icon_24x24.png</file>
+        <file alias="icon_32x32.png">icons/icon_32x32.png</file>
+        <file alias="icon_48x48.png">icons/icon_48x48.png</file>
+        <file alias="icon_64x64.png">icons/icon_64x64.png</file>
+        <file alias="icon_128x128.png">icons/icon_128x128.png</file>
+        <file alias="icon_256x256.png">icons/icon_256x256.png</file>
+    </qresource>
+</RCC>
