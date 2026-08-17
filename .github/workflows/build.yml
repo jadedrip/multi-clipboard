@@ -94,8 +94,9 @@ jobs:
       - name: 运行单元测试
         shell: pwsh
         run: |
-          xmake r test_content_parser -o test_result.txt,txt
-          Get-Content test_result.txt
+          # xmake run 的工作目录是构建输出目录，报告文件需写到工作区根目录（GITHUB_WORKSPACE）
+          xmake r test_content_parser -o "$env:GITHUB_WORKSPACE/test_result.txt,txt"
+          Get-Content "$env:GITHUB_WORKSPACE/test_result.txt"
 
       - name: 上传测试报告
         if: always()
