@@ -53,7 +53,7 @@
 
 ## 日志与故障排查
 
-日志目录（Windows）：`%APPDATA%\MultiClipboard\logs`
+日志目录：可执行文件所在目录的 `logs` 子目录
 
 | 文件 | 内容 |
 | :--- | :--- |

@@ -73,26 +73,8 @@ bool checkSingleInstance()
  */
 int main(int argc, char* argv[])
 {
-    // ========== 第零步：初始化日志（必须在一切之前） ==========
-    Logger& logMgr = Logger::instance();
-    logMgr.initialize();
-    logMgr.setupGlobalHandler();
-    qInfo() << "日志系统初始化完成";
-
-    // ========== 第一步：单实例检测 ==========
-    if (!checkSingleInstance()) {
-        qInfo() << "检测到已有实例在运行，退出当前实例";
-        return 0;
-    }
-    qInfo() << "单实例检测通过";
-
-    // ========== 第二步：设置 Windows 任务栏图标 ==========
-#ifdef Q_OS_WIN
-    SetCurrentProcessExplicitAppUserModelID(L"MultiClipboard");
-    qInfo() << "AppUserModelID 设置成功";
-#endif
-
-    // ========== 第三步：创建 QApplication ==========
+    // ========== 第一步：创建 QApplication ==========
+    // 注意：日志目录使用可执行文件路径（applicationDirPath），必须先创建应用
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("多元剪贴板"));
     app.setApplicationVersion(QStringLiteral("1.0.0"));
@@ -100,24 +82,43 @@ int main(int argc, char* argv[])
     // 关闭窗口不退出，托盘常驻
     app.setQuitOnLastWindowClosed(false);
 
+    // ========== 第二步：初始化日志（记录后续所有事件） ==========
+    Logger& logMgr = Logger::instance();
+    logMgr.initialize();
+    logMgr.setupGlobalHandler();
+    qInfo() << "日志系统初始化完成";
+
+    // ========== 第三步：单实例检测 ==========
+    if (!checkSingleInstance()) {
+        qInfo() << "检测到已有实例在运行，退出当前实例";
+        return 0;
+    }
+    qInfo() << "单实例检测通过";
+
+    // ========== 第四步：设置 Windows 任务栏图标 ==========
+#ifdef Q_OS_WIN
+    SetCurrentProcessExplicitAppUserModelID(L"MultiClipboard");
+    qInfo() << "AppUserModelID 设置成功";
+#endif
+
     // 设置跨平台默认字体（确保中文正确显示）
     FontConfig::setupApplicationFont(&app);
     qInfo() << "QApplication 创建成功";
 
-    // ========== 第四步：加载配置 ==========
+    // ========== 第五步：加载配置 ==========
     ConfigManager config;
     qInfo() << QStringLiteral("配置加载成功，窗口置顶: %1")
                    .arg(config.get(QStringLiteral("window.always_on_top"), true).toString());
 
-    // ========== 第五步：创建主窗口 ==========
+    // ========== 第六步：创建主窗口 ==========
     MainWindow window(&config);
     qInfo() << "主窗口创建成功";
 
-    // ========== 第六步：显示窗口 ==========
+    // ========== 第七步：显示窗口 ==========
     window.showWindow();
     qInfo() << "窗口显示成功";
 
-    // ========== 第七步：进入事件循环 ==========
+    // ========== 第八步：进入事件循环 ==========
     const int exitCode = app.exec();
     qInfo() << QStringLiteral("事件循环退出，退出码: %1").arg(exitCode);
     return exitCode;

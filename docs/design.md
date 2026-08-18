@@ -203,7 +203,7 @@ public:
 - 文件轮转日志 `multiclipboard.log`（5MB × 5 份）
 - 错误日志 `error.log`（仅 ERROR 及以上）
 - 崩溃报告 `crash_YYYYMMDD_HHMMSS.log`
-- 日志目录：`%APPDATA%/MultiClipboard/logs`（Windows）
+- 日志目录：可执行文件所在目录的 `logs` 子目录（便携式，日志跟随程序位置）
 - 安装 `qInstallMessageHandler` 捕获 Qt 与全局消息
 
 ### 4.9 ThemeManager（主题管理器）— `ui/theme_manager.h/.cpp`

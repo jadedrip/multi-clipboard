@@ -160,7 +160,7 @@ xmake r test_content_parser -o test_result.txt,txt
 | `ui.theme` | 主题（dark / light） | `dark` |
 | `shortcuts.*` | 各功能快捷键 | 见快捷键表 |
 
-日志文件位于 `%APPDATA%\MultiClipboard\logs`（Windows）。
+日志文件位于可执行文件所在目录的 `logs` 子目录（便携式，日志跟随程序位置）。
 
 ## 目录结构
 

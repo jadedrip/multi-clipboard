@@ -16,6 +16,12 @@ set_languages("c++20")
 -- Windows 下避免 min/max 宏与 Qt 冲突
 add_defines("NOMINMAX")
 
+-- MSVC 编译时声明源文件为 UTF-8，避免中文字符串字面量按本地代码页（GBK）解码导致乱码
+-- （Windows 默认工具链为 MSVC；如需 MinGW 可自行替换为 -finput-charset=utf-8）
+if is_plat("windows") then
+    add_cxxflags("/utf-8")
+end
+
 -- 源码中统一使用 "xxx.h" 形式引用（同目录）或 "模块/xxx.h" 形式引用（跨目录），
 -- 需把 src 根目录及各子模块目录加入包含路径
 add_includedirs("src", "src/core", "src/utils", "src/ui", "src/platform")
