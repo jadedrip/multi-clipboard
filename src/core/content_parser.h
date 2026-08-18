@@ -108,6 +108,17 @@ private:
     QString resolveDelimiter(const QString& delimiter);
 
     /**
+     * @brief 规范化行尾：\r\n 与 \r 均转换为 \n
+     *
+     * 保证 Windows（\r\n）、Unix（\n）、旧 Mac（\r）三种换行风格的文本
+     * 都能被统一按 \n 切分，避免行尾残留 \r。
+     *
+     * @param text 原始文本
+     * @return 规范化后的文本
+     */
+    QString normalizeLineEndings(const QString& text);
+
+    /**
      * @brief 应用后处理规则（去除空白、移除空行、去重）
      * @param items 原始条目列表
      * @return 处理后的条目列表

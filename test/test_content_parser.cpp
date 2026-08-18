@@ -51,6 +51,57 @@ private slots:
         QCOMPARE(items[3].content, QStringLiteral("line3"));
     }
 
+    // ==================== 行尾兼容性 ====================
+
+    void testParseWindowsLineEndings()
+    {
+        // Windows \r\n 换行：原始条目应规范化行尾，条目内容不残留 \r
+        ContentParser parser;
+        const QString text = QStringLiteral("line1\r\nline2\r\nline3");
+
+        const QVector<Item> items = parser.parse(text);
+
+        QCOMPARE(items.size(), 4);
+        QVERIFY(items[0].raw);
+        // 原始条目行尾已规范化为 \n
+        QCOMPARE(items[0].content, QStringLiteral("line1\nline2\nline3"));
+        QCOMPARE(items[1].content, QStringLiteral("line1"));
+        QCOMPARE(items[2].content, QStringLiteral("line2"));
+        QCOMPARE(items[3].content, QStringLiteral("line3"));
+    }
+
+    void testParseOldMacLineEndings()
+    {
+        // 旧 Mac \r 换行：同样按 \n 切分
+        ContentParser parser;
+        const QString text = QStringLiteral("line1\rline2\rline3");
+
+        const QVector<Item> items = parser.parse(text);
+
+        QCOMPARE(items.size(), 4);
+        QCOMPARE(items[0].content, QStringLiteral("line1\nline2\nline3"));
+        QCOMPARE(items[1].content, QStringLiteral("line1"));
+        QCOMPARE(items[2].content, QStringLiteral("line2"));
+        QCOMPARE(items[3].content, QStringLiteral("line3"));
+    }
+
+    void testParseExcelWindowsLineEndings()
+    {
+        // Excel 复制的 Windows 文本：\r\n 分行、\t 分列，内容不残留 \r
+        ContentParser parser;
+        const QString text = QStringLiteral("姓名\t年龄\r\n张三\t25\r\n李四\t30");
+
+        const QVector<Item> items = parser.parseFromExcel(text);
+
+        QCOMPARE(items.size(), 6);
+        QCOMPARE(items[0].content, QStringLiteral("姓名"));
+        QCOMPARE(items[1].content, QStringLiteral("张三"));
+        QCOMPARE(items[2].content, QStringLiteral("李四"));
+        QCOMPARE(items[3].content, QStringLiteral("年龄"));
+        QCOMPARE(items[4].content, QStringLiteral("25"));
+        QCOMPARE(items[5].content, QStringLiteral("30"));
+    }
+
     // ==================== 指定切分模式 ====================
 
     void testParseSingleColumnMode()

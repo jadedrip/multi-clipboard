@@ -37,6 +37,10 @@ ContentParser::~ContentParser() = default;
 
 QVector<Item> ContentParser::parse(const QString& text, std::optional<SplitMode> mode)
 {
+    // 统一规范化行尾：\r\n 与 \r 均转为 \n，保证 Windows/Unix/旧 Mac 文本兼容
+    // 否则 split('\n') 会在 Windows 文本行尾残留 \r，导致去重/空行判断失效
+    const QString normalized = normalizeLineEndings(text);
+
     // 确定实际使用的切分模式
     SplitMode effectiveMode = SplitMode::Smart;
     if (mode.has_value()) {
@@ -53,13 +57,13 @@ QVector<Item> ContentParser::parse(const QString& text, std::optional<SplitMode>
     QVector<Item> items;
     switch (effectiveMode) {
     case SplitMode::Smart:
-        items = parseSmart(text);
+        items = parseSmart(normalized);
         break;
     case SplitMode::SingleColumn:
-        items = parseSingleColumn(text);
+        items = parseSingleColumn(normalized);
         break;
     case SplitMode::SingleRow:
-        items = parseSingleRow(text);
+        items = parseSingleRow(normalized);
         break;
     }
 
@@ -68,12 +72,12 @@ QVector<Item> ContentParser::parse(const QString& text, std::optional<SplitMode>
 
     // 如果拆分结果超过限制，则不拆分，只保留原始条目
     if (shouldSkipSplit(items)) {
-        QVector<Item> rawItems = parseRaw(text, 0);
+        QVector<Item> rawItems = parseRaw(normalized, 0);
         // 如果 parseRaw 返回空（单行纯文本），则手动创建一个原始条目
-        if (rawItems.isEmpty() && !text.trimmed().isEmpty()) {
+        if (rawItems.isEmpty() && !normalized.trimmed().isEmpty()) {
             Item raw;
             raw.id = "raw_0";
-            raw.content = text.trimmed();
+            raw.content = normalized.trimmed();
             raw.index = 0;
             raw.raw = true;
             rawItems.append(raw);
@@ -82,7 +86,7 @@ QVector<Item> ContentParser::parse(const QString& text, std::optional<SplitMode>
     }
 
     // 原始条目 + 分隔条目
-    QVector<Item> rawItems = parseRaw(text, 0);
+    QVector<Item> rawItems = parseRaw(normalized, 0);
     QVector<Item> result = rawItems + items;
     for (int i = 0; i < result.size(); ++i) {
         result[i].index = i;
@@ -92,8 +96,9 @@ QVector<Item> ContentParser::parse(const QString& text, std::optional<SplitMode>
 
 QVector<Item> ContentParser::parseFromExcel(const QString& text)
 {
-    const QString trimmed = text.trimmed();
-    const QStringList lines = trimmed.split('\n');
+    // 统一规范化行尾（同 parse 入口）
+    const QString normalized = normalizeLineEndings(text).trimmed();
+    const QStringList lines = normalized.split('\n');
     if (lines.isEmpty()) {
         return {};
     }
@@ -249,6 +254,15 @@ QString ContentParser::resolveDelimiter(const QString& delimiter)
     for (const auto& mapping : mappings) {
         result.replace(mapping.first, mapping.second);
     }
+    return result;
+}
+
+QString ContentParser::normalizeLineEndings(const QString& text)
+{
+    QString result = text;
+    // 先合并 \r\n 为 \n，再处理单独的 \r，保证顺序不产生重复换行
+    result.replace("\r\n", "\n");
+    result.replace('\r', '\n');
     return result;
 }
 

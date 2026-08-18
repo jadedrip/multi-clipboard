@@ -102,8 +102,10 @@ bool ClipboardManager::isNonTextContent()
     if (m_platform->isFileCopyContent(mime)) {
         return true;
     }
-    // 图片数据
-    if (mime->hasImage()) {
+    // 图片数据：仅当剪贴板只有图片、没有文本时才跳过
+    // 注意：Excel 复制单元格时剪贴板会同时包含位图格式与文本，
+    // 此时应以文本为准（否则 Excel 复制会被误判为图片而忽略）
+    if (mime->hasImage() && !mime->hasText()) {
         return true;
     }
     return false;
