@@ -1,0 +1,81 @@
+# =============================================================
+# 发布工作流：打 tag v* 时在 GitHub 上构建并发布 Windows 发布包
+#
+# 用法：
+#   git tag v1.0.0
+#   git push origin v1.0.0
+#
+# 流程：Windows 构建（vcpkg Qt6）-> 单元测试 -> xmake pack 打包
+#       -> 压缩 zip -> 创建 GitHub Release 并上传
+# 说明：vcpkg 缓存 key 与 build.yml 一致，可复用 CI 缓存加速
+# =============================================================
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    name: 构建并发布 Windows 包
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: 缓存 vcpkg 已安装包
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg\installed
+          key: vcpkg-qtbase-${{ runner.os }}
+
+      - name: 安装 Qt6 (Windows)
+        shell: pwsh
+        run: |
+          vcpkg install qtbase:x64-windows
+          # 将 Qt 工具目录加入 PATH，供 xmake 定位 Qt SDK
+          "QT_TOOL_BIN=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\tools\Qt6\bin" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          # pack.lua 依赖 VCPKG_ROOT 定位运行库，runner 上未设置时补充
+          if (-not $env:VCPKG_ROOT) {
+            "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          }
+
+      - name: 配置工程
+        shell: pwsh
+        run: |
+          if ($env:QT_TOOL_BIN) {
+            $env:PATH = "$env:QT_TOOL_BIN;" + $env:PATH
+          }
+          xmake f -y -m release
+
+      - name: 编译并打包
+        shell: pwsh
+        run: xmake pack
+
+      - name: 运行单元测试
+        shell: pwsh
+        run: |
+          xmake r test_content_parser -o "$env:GITHUB_WORKSPACE/test_result.txt,txt"
+          Get-Content "$env:GITHUB_WORKSPACE/test_result.txt"
+
+      - name: 压缩发布包
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v',''
+          Compress-Archive -Path dist/* -DestinationPath "multiclipboard-$version-windows-x64.zip" -Force
+          Get-Item "multiclipboard-$version-windows-x64.zip" | Select-Object Name, Length
+
+      - name: 创建 Release 并上传
+        uses: softprops/action-gh-release@v2
+        with:
+          files: multiclipboard-*-windows-x64.zip
+          generate_release_notes: true
