@@ -1,12 +1,13 @@
 # =============================================================
-# 发布工作流：打 tag v* 时在 GitHub 上构建并发布 Windows 发布包
+# 发布工作流：打 tag v* 时在 GitHub 上构建并发布 Windows / Linux 发布包
 #
 # 用法：
 #   git tag v1.0.0
 #   git push origin v1.0.0
 #
-# 流程：Windows 构建（vcpkg Qt6）-> 单元测试 -> xmake pack 打包
-#       -> 压缩 zip -> 创建 GitHub Release 并上传
+# 流程：Windows 构建（vcpkg Qt6）-> 单元测试 -> xmake pack 打包 -> 压缩 zip
+#       Linux 构建（apt Qt6）-> 单元测试 -> pack_linux.sh 生成 AppImage
+#       -> 创建 GitHub Release 并上传
 # 说明：vcpkg 缓存 key 与 build.yml 一致，可复用 CI 缓存加速
 # =============================================================
 name: Release
@@ -17,7 +18,7 @@ on:
       - 'v*'
 
 jobs:
-  release:
+  release-windows:
     name: 构建并发布 Windows 包
     runs-on: windows-latest
     permissions:
@@ -79,3 +80,39 @@ jobs:
         with:
           files: multiclipboard-*-windows-x64.zip
           generate_release_notes: true
+
+  release-linux:
+    name: 构建并发布 Linux AppImage
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装系统依赖（Qt6 / squashfs-tools）
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qt6-base-dev squashfs-tools
+
+      - name: 安装 xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: 打包 Linux AppImage（编译 + 收集 Qt 依赖 + 生成 AppImage）
+        shell: bash
+        run: |
+          # 从 tag 提取版本号（去掉 v 前缀），交给 pack_linux.sh
+          version="${GITHUB_REF_NAME#v}"
+          bash scripts/pack_linux.sh "$version"
+
+      - name: 运行单元测试
+        shell: bash
+        run: xmake r test_content_parser
+
+      - name: 创建 Release 并上传
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/multiclipboard-*-linux-x86_64.AppImage

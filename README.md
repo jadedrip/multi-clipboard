@@ -115,7 +115,9 @@ xmake r test_content_parser -o test_result.txt,txt
 
 ## 打包
 
-打包仅支持 release，产物统一输出到 `dist/` 目录（当前仅支持 Windows，Linux 下 `xmake pack` 不可用）：
+产物统一输出到 `dist/` 目录，Windows 与 Linux 打包方式不同：
+
+### Windows
 
 | 命令 | 作用 |
 | :--- | :--- |
@@ -135,6 +137,19 @@ xmake r test_content_parser -o test_result.txt,txt
 > 打包逻辑位于 `scripts/pack.lua`（xmake Lua 模块，由 `xmake pack` 任务调用）：采用 PE 导入表解析收集依赖，
 > 仅打包实际用到的 DLL，完成后自动做完整性校验。
 > 可将 `dist/` 目录整体拷贝到目标机器直接运行（Windows 10+ 无需额外安装运行库）。
+
+### Linux
+
+使用 linuxdeploy 生成自包含的 AppImage（无需目标机安装 Qt6）：
+
+```bash
+bash scripts/pack_linux.sh [版本号]   # 版本号缺省时自动读取 xmake.lua
+```
+
+产物：`dist/multiclipboard-<版本>-linux-x86_64.AppImage`。
+
+> 打包逻辑位于 `scripts/pack_linux.sh`：编译 release → linuxdeploy + plugin-qt 收集 Qt 依赖
+> → 补充 desktop/图标 → 生成 AppImage。工具首次运行自动下载到 `~/ldt`（可设 `LINUXDEPLOY_HOME` 覆盖）。
 
 ## 使用说明
 
@@ -167,7 +182,8 @@ xmake r test_content_parser -o test_result.txt,txt
 ```
 ├── xmake.lua                  # 构建脚本（xmake）
 ├── scripts/                   # 构建辅助脚本
-│   └── pack.lua               # 打包模块（xmake pack：收集 release 产物到 dist）
+│   ├── pack.lua               # Windows 打包模块（xmake pack：收集 release 产物到 dist）
+│   └── pack_linux.sh          # Linux 打包脚本（linuxdeploy 生成 AppImage）
 ├── docs/                      # 设计文档
 │   ├── design.md              # 设计文档
 │   ├── architecture.md        # 架构说明
