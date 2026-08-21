@@ -39,10 +39,10 @@ end
 option("enable_pack")
     set_default(false)
     set_showmenu(true)
-    set_description("构建完成后自动打包 release 产物到 dist")
+    set_description("构建完成后自动打包 release 产物到 dist/windows")
 
 -- =============================================================
--- 打包任务：xmake pack（先编译，再打包 release 产物到 dist）
+-- 打包任务：xmake pack（先编译，再打包 release 产物到 dist/windows）
 -- =============================================================
 task("pack")
     set_category("package")
@@ -55,7 +55,7 @@ task("pack")
     end)
     set_menu {
         usage   = "xmake pack",
-        description = "编译并打包 release 构建产物（exe / Qt 依赖 DLL / 插件）到 dist",
+        description = "编译并打包 release 构建产物（exe / Qt 依赖 DLL / 插件）到 dist/windows",
         options = {}
     }
 

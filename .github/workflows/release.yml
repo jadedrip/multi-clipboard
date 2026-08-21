@@ -72,7 +72,7 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}" -replace '^v',''
-          Compress-Archive -Path dist/* -DestinationPath "multiclipboard-$version-windows-x64.zip" -Force
+          Compress-Archive -Path dist/windows/* -DestinationPath "multiclipboard-$version-windows-x64.zip" -Force
           Get-Item "multiclipboard-$version-windows-x64.zip" | Select-Object Name, Length
 
       - name: 创建 Release 并上传
@@ -115,4 +115,4 @@ jobs:
       - name: 创建 Release 并上传
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/multiclipboard-*-linux-x86_64.AppImage
+          files: dist/linux/multiclipboard-*-linux-x86_64.AppImage

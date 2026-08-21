@@ -115,15 +115,15 @@ xmake r test_content_parser -o test_result.txt,txt
 
 ## 打包
 
-产物统一输出到 `dist/` 目录，Windows 与 Linux 打包方式不同：
+产物统一输出到 `dist/` 目录，按平台分为 `dist/windows/` 与 `dist/linux/` 两个子目录，Windows 与 Linux 打包方式不同：
 
 ### Windows
 
 | 命令 | 作用 |
 | :--- | :--- |
 | `xmake` | 仅编译（不打包） |
-| `xmake pack` | 先编译，再打包 release 产物到 `dist/` |
-| `xmake f --enable_pack=true` | 配置"构建后自动打包"，之后 `xmake` 编译完自动打包到 `dist/` |
+| `xmake pack` | 先编译，再打包 release 产物到 `dist/windows/` |
+| `xmake f --enable_pack=true` | 配置"构建后自动打包"，之后 `xmake` 编译完自动打包到 `dist/windows/` |
 
 打包目录内容：
 
@@ -146,7 +146,7 @@ xmake r test_content_parser -o test_result.txt,txt
 bash scripts/pack_linux.sh [版本号]   # 版本号缺省时自动读取 xmake.lua
 ```
 
-产物：`dist/multiclipboard-<版本>-linux-x86_64.AppImage`。
+产物：`dist/linux/multiclipboard-<版本>-linux-x86_64.AppImage`。
 
 > 打包逻辑位于 `scripts/pack_linux.sh`：编译 release → linuxdeploy + plugin-qt 收集 Qt 依赖
 > → 补充 desktop/图标 → 生成 AppImage。工具首次运行自动下载到 `~/ldt`（可设 `LINUXDEPLOY_HOME` 覆盖）。
@@ -182,7 +182,7 @@ bash scripts/pack_linux.sh [版本号]   # 版本号缺省时自动读取 xmake.
 ```
 ├── xmake.lua                  # 构建脚本（xmake）
 ├── scripts/                   # 构建辅助脚本
-│   ├── pack.lua               # Windows 打包模块（xmake pack：收集 release 产物到 dist）
+│   ├── pack.lua               # Windows 打包模块（xmake pack：收集 release 产物到 dist/windows）
 │   └── pack_linux.sh          # Linux 打包脚本（linuxdeploy 生成 AppImage）
 ├── docs/                      # 设计文档
 │   ├── design.md              # 设计文档

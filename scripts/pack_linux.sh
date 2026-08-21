@@ -155,9 +155,9 @@ cd "$PROJECT_ROOT"
     --executable "$APPDIR/usr/bin/multiclipboard" \
     --plugin qt --output appimage 2>&1 | tail -3
 
-# ---------- 10. 规范命名并输出到 dist ----------
-OUTPUT="$PROJECT_ROOT/dist/multiclipboard-$VERSION-linux-x86_64.AppImage"
-mkdir -p "$PROJECT_ROOT/dist"
+# ---------- 10. 规范命名并输出到 dist/linux ----------
+OUTPUT="$PROJECT_ROOT/dist/linux/multiclipboard-$VERSION-linux-x86_64.AppImage"
+mkdir -p "$PROJECT_ROOT/dist/linux"
 # 查找刚生成的 AppImage（比 AppDir 更新）并移动到 dist
 find "$PROJECT_ROOT" -maxdepth 1 -name '*.AppImage' -newer "$APPDIR" \
     -exec mv {} "$OUTPUT" \; 2>/dev/null || true

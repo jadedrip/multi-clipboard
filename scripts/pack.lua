@@ -133,8 +133,8 @@ function run(root)
     local vcpkg_bin = path.join(vcpkg_root, "installed/x64-windows/bin")
     -- 注意：vcpkg 的 qtbase 插件目录位于 installed/x64-windows/Qt6/plugins
     local plugins_dir = path.join(vcpkg_root, "installed/x64-windows/Qt6/plugins")
-    -- 打包目录：工程根目录下的 dist
-    local pack_dir = path.join(root, "dist")
+    -- 打包目录：工程根目录下 dist/windows（与 dist/linux 分开）
+    local pack_dir = path.join(root, "dist/windows")
 
     -- 前置校验
     if not os.isfile(exe_path) then
