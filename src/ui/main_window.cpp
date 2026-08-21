@@ -37,6 +37,7 @@
 #include "config_window.h"
 #include "theme_manager.h"
 #include "font_config.h"
+#include "window_drag_filter.h"
 
 // ==================== 匿名命名空间：图标路径辅助函数 ====================
 namespace {
@@ -304,6 +305,9 @@ void MainWindow::initContentArea(QVBoxLayout* parentLayout)
     m_itemsLayout->addStretch();
 
     m_scrollArea->setWidget(scrollContent);
+
+    // 允许通过列表空白区域按住左键拖动移动窗体（不依赖标题栏）
+    new WindowDragFilter(scrollContent, this, this);
 
     parentLayout->addWidget(m_scrollArea, 1);
 }

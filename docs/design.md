@@ -14,6 +14,7 @@
 - 纯文本粘贴
 - 单实例运行检测
 - 日志系统（文件轮转 + 错误日志 + 崩溃报告）
+- 列表空白区域拖拽移动窗体（不依赖标题栏）
 
 ## 2. 技术选型
 
@@ -65,7 +66,9 @@
 │   │   ├── theme_manager.h       # 主题管理器（接口声明）
 │   │   ├── theme_manager.cpp     # 主题管理器实现（颜色常量 + 样式生成）
 │   │   ├── font_config.h         # 字体配置（接口声明）
-│   │   └── font_config.cpp       # 字体配置实现
+│   │   ├── font_config.cpp       # 字体配置实现
+│   │   ├── window_drag_filter.h  # 窗口拖拽移动过滤器（接口声明）
+│   │   └── window_drag_filter.cpp # 窗口拖拽移动过滤器实现
 │   └── utils/                    # 工具模块
 │       ├── config_manager.h      # 配置管理器（接口声明）
 │       ├── config_manager.cpp    # 配置管理器实现
@@ -232,6 +235,7 @@ public:
 - 窗口自适应高度（最多 8 行）
 - `closeEvent` 隐藏到托盘、保存窗口位置/大小
 - 热键回调（toggleWindow / toggleAlwaysOnTop / clearAll / copyAll / pastePlain）
+- 列表空白区域拖拽移动窗体（通过 `WindowDragFilter` 事件过滤器实现）
 
 信号：`windowClosed`、`showRequested`。
 
@@ -256,6 +260,21 @@ public:
 
 `HotkeyEditWidget` 继承 `QLineEdit`：只读、点击后按下组合键捕获显示，信号 `hotkeySet(QString)`。
 
+### 4.14 窗口拖拽移动过滤器 — `ui/window_drag_filter.h/.cpp`
+
+继承 `QObject`，作为事件过滤器安装在列表滚动容器（`QScrollArea` 的内容部件）上，实现不依赖标题栏的窗体拖动：
+
+| 成员 | 说明 |
+| :--- | :--- |
+| `explicit WindowDragFilter(QWidget* watched, QWidget* targetWindow, QObject* parent = nullptr)` | 构造函数，自动将过滤器安装到 `watched` 上，`targetWindow` 为要移动的窗口 |
+| `bool eventFilter(QObject* watched, QEvent* event) override` | 处理左键按下/移动/释放，移动超过阈值后随鼠标位移移动窗口 |
+
+实现要点：
+- 左键按下时记录鼠标全局坐标与目标窗口位置，消费事件使 `watched` 成为鼠标抓取者（保证拖动期间持续收到移动事件）；
+- 按住左键移动超过 `m_dragThreshold`（4px）后进入拖拽状态，目标位置 = 按下时窗口位置 + 鼠标位移，调用 `move()` 实时移动；
+- 点击条目卡片时事件由 `ItemWidget` 消费，不会传播到过滤器，因此条目拖拽与窗体移动互不干扰；
+- 其他事件一律放行，不影响列表滚轮、滚动条等既有交互。
+
 ## 5. 关键信号/槽流程
 
 ```
@@ -275,6 +294,12 @@ public:
         └─> DragManager::startDrag
              ├─> 路径 A：QDrag::exec 成功 -> setUsed(true)
              └─> 失败回退路径 B：模拟点击 + 写剪贴板 + Ctrl+V
+
+列表空白区域拖动移动窗体
+   └─> scrollContent（列表滚动容器）左键按下
+        └─> WindowDragFilter::eventFilter
+             ├─> 记录按下位置，进入候选状态（4px 阈值）
+             └─> 按住左键移动超过阈值 -> MainWindow::move(按下时位置 + 位移)
 
 全局热键
    └─> Windows 消息 WM_HOTKEY

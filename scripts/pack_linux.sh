@@ -43,17 +43,21 @@ download_and_extract() {
     if [ ! -d "$LINUXDEPLOY_HOME/$outdir/usr/bin" ]; then
         if [ ! -f "$appimage" ]; then
             echo "==> 下载 $name ..."
-            curl -L --retry 3 --retry-all-errors -o "$appimage" "$url" || {
+            # 注：低版本 curl（如 Debian 10 的 7.64）不支持 --retry-all-errors，故只使用 --retry
+            curl -L --retry 3 -o "$appimage" "$url" || {
                 echo "!! 自动下载失败，请手动下载后放入: $appimage"
                 echo "   下载地址: $url"
                 exit 1
             }
         fi
         echo "==> 解压 $name ..."
-        # 定位 AppImage 内嵌 squashfs 的偏移并解压（避免 WSL 无 FUSE 的限制）
+        # 定位 AppImage 内嵌 squashfs 的偏移，切出后再用 unsquashfs 解压
+        # （避免 WSL 无 FUSE；兼容不支持 -offset 参数的低版本 squashfs-tools，如 Debian 10 的 4.3）
         local offset
         offset=$(grep -abo 'hsqs' "$appimage" | tail -1 | cut -d: -f1)
-        unsquashfs -offset "$offset" -d "$LINUXDEPLOY_HOME/$outdir" "$appimage" >/dev/null
+        dd if="$appimage" of="$LINUXDEPLOY_HOME/$name.fs" bs=1 skip="$offset" 2>/dev/null
+        unsquashfs -d "$LINUXDEPLOY_HOME/$outdir" "$LINUXDEPLOY_HOME/$name.fs" >/dev/null
+        rm -f "$LINUXDEPLOY_HOME/$name.fs"
         chmod +x "$LINUXDEPLOY_HOME/$outdir/usr/bin"/* 2>/dev/null || true
     fi
 }
@@ -133,7 +137,7 @@ fi
 RUNTIME_FILE="$LINUXDEPLOY_HOME/runtime-x86_64"
 if [ ! -f "$RUNTIME_FILE" ]; then
     echo "==> 下载 AppImage runtime ..."
-    curl -L --retry 3 --retry-all-errors -o "$RUNTIME_FILE" \
+    curl -L --retry 3 -o "$RUNTIME_FILE" \
         "https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64" || {
         echo "!! runtime 自动下载失败，请手动下载后放入: $RUNTIME_FILE"
         echo "   下载地址: https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64"

@@ -11,7 +11,7 @@
 
 set_project("multiclipboard")
 set_version("1.0.0")
-set_languages("c++20")
+set_languages("c++17")
 
 -- Windows 下避免 min/max 宏与 Qt 冲突
 add_defines("NOMINMAX")
