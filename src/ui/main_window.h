@@ -23,6 +23,8 @@ class QScrollArea;
 class QVBoxLayout;
 class QMenu;
 class QAction;
+class QSlider;
+class QTimer;
 
 /**
  * @brief 主窗口
@@ -133,6 +135,18 @@ private:
      * @brief 初始化状态栏
      */
     void initStatusBar();
+
+    /**
+     * @brief 初始化底部透明度控制条（滑动条 + 百分比标签）
+     * @param parentLayout 父布局
+     */
+    void initOpacityControl(QVBoxLayout* parentLayout);
+
+    /**
+     * @brief 应用窗口不透明度
+     * @param percent 不透明度百分比（30~100）
+     */
+    void applyOpacity(int percent);
 
     /**
      * @brief 初始化系统托盘
@@ -251,6 +265,18 @@ private:
      */
     void onHotkeysChanged();
 
+    /**
+     * @brief 窗口置顶实时预览处理（不落盘）
+     * @param on 是否置顶
+     */
+    void onAlwaysOnTopPreview(bool on);
+
+    /**
+     * @brief 配置窗口关闭后，按配置重新应用窗口置顶与透明度
+     *        确定 = 应用新值，取消 = 恢复原状
+     */
+    void syncConfigWindowSettings();
+
     // ==================== 主题 ====================
 
     /**
@@ -319,6 +345,10 @@ private:
     QVBoxLayout* m_itemsLayout = nullptr;                       /**< 条目布局 */
     QStatusBar* m_statusBar = nullptr;                          /**< 状态栏 */
     QLabel* m_statusLabel = nullptr;                            /**< 状态标签 */
+    QFrame* m_opacityBar = nullptr;                             /**< 透明度控制条容器 */
+    QSlider* m_opacitySlider = nullptr;                         /**< 透明度滑动条（30~100） */
+    QLabel* m_opacityValueLabel = nullptr;                      /**< 透明度百分比标签 */
+    QTimer* m_opacitySaveTimer = nullptr;                       /**< 透明度配置防抖保存定时器 */
 
     QSystemTrayIcon* m_trayIcon = nullptr;                      /**< 托盘图标 */
     QAction* m_trayPinAction = nullptr;                         /**< 托盘置顶菜单项 */

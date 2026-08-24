@@ -15,6 +15,7 @@
 - 单实例运行检测
 - 日志系统（文件轮转 + 错误日志 + 崩溃报告）
 - 列表空白区域拖拽移动窗体（不依赖标题栏）
+- 窗口透明度配置（界面底部滑动条，30%~100% 不透明）
 
 ## 2. 技术选型
 
@@ -186,6 +187,7 @@ public:
 实现要点：
 - 内部使用 `QJsonObject` 保存配置，支持嵌套合并（默认配置 + 用户配置）。
 - 默认配置内置在代码中，用户配置缺失的项自动使用默认值。
+- 界面透明度配置键为 `ui.opacity`（整数百分比 30~100，默认 100），由主窗口底部滑动条写入。
 
 ### 4.7 HotkeyManager（热键管理器）— `utils/hotkey_manager.h/.cpp`
 
@@ -230,9 +232,10 @@ public:
 - 滚动区域条目列表（`ItemWidget` 数组）
 - 状态栏（已使用计数 / 搜索结果数）
 - 系统托盘（置顶切换、显示、配置、主题切换、退出）
-- 剪贴板监控信号连接（多行自动弹出、单行后台更新）
+- 剪贴板监控信号连接（切分出多条自动弹出、仅一条后台更新）
 - 持久化条目加载/合并/排序（persistent 优先、raw 其次、index 最后）
 - 窗口自适应高度（最多 8 行）
+- 底部透明度控制条（`QSlider`，30%~100%：滑动实时调用 `setWindowOpacity` 预览，防抖保存 `ui.opacity`）
 - `closeEvent` 隐藏到托盘、保存窗口位置/大小
 - 热键回调（toggleWindow / toggleAlwaysOnTop / clearAll / copyAll / pastePlain）
 - 列表空白区域拖拽移动窗体（通过 `WindowDragFilter` 事件过滤器实现）
@@ -253,10 +256,14 @@ public:
 
 `ConfigWindow` 继承 `QDialog`：
 - 快捷键配置表格（5 行 2 列：功能描述 + HotkeyEditWidget）
-- 窗口设置（自动弹出复选框）
+- 窗口设置（自动弹出复选框、窗口置顶复选框、透明度滑动条 30%~100%）
 - 按钮：重置默认 / 取消 / 确定
-- 信号：`hotkeysChanged`
-- 保存时写回 `shortcuts.*` 与 `window.auto_popup`
+- 信号：`hotkeysChanged`、`alwaysOnTopPreview(bool)`、`opacityPreview(int)`
+- 保存时写回 `shortcuts.*`、`window.auto_popup`、`window.always_on_top`、`ui.opacity`
+
+主窗口联动（实时预览 + 关闭时同步）：
+- 置顶复选框 / 透明度滑动条变化时实时发出 `alwaysOnTopPreview` / `opacityPreview`，主窗口即时应用（不落盘）；
+- 点击确定后保存配置；配置窗口无论确定/取消关闭，主窗口统一按配置重新应用置顶与透明度（确定 = 新值，取消 = 恢复原状）。
 
 `HotkeyEditWidget` 继承 `QLineEdit`：只读、点击后按下组合键捕获显示，信号 `hotkeySet(QString)`。
 
@@ -286,7 +293,7 @@ public:
                        ├─> ContentParser::parse(text) -> items
                        ├─> 合并持久化条目、查重
                        ├─> _applySearchFilter -> _displayItems（重建 ItemWidget）
-                       ├─> 多行 -> 托盘弹出窗口；单行 -> 后台更新
+                       ├─> 切分出多条 -> 托盘弹出窗口；仅 1 条 -> 后台更新
                        └─> 状态栏更新
 
 拖拽条目

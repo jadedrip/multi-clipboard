@@ -43,6 +43,7 @@ QJsonObject buildDefaultConfig()
     ui["item_height"] = 36;
     ui["font_size"] = 10;
     ui["theme"] = "light";
+    ui["opacity"] = 100;                        // 窗口不透明度百分比（30~100，100 为完全不透明）
     ui["show_status_bar"] = true;
     ui["show_toolbar"] = true;
     ui["mark_used_after_double_click"] = true;

@@ -20,11 +20,13 @@
 #include <QPixmap>
 #include <QColor>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QSet>
 #include <QStringList>
+#include <QSlider>
 #include <algorithm>
 
 #include "content_parser.h"
@@ -46,14 +48,29 @@ namespace {
  * @brief 获取图标文件路径
  *
  * 支持以下场景：
- * 1. 开发环境：直接从 src/resources 读取
- * 2. 部署环境：资源文件在可执行文件同目录的 resources 文件夹
- * 3. 找不到时返回空字符串（由调用方创建纯色图标）
+ * 1. Qt 资源系统（编译进可执行文件，最可靠）
+ * 2. 开发环境：从 src/resources 读取
+ * 3. 部署环境：资源文件在可执行文件同目录的 resources 文件夹
+ * 4. 找不到时返回空字符串（由调用方创建纯色图标）
  *
- * @return 图标文件的绝对路径，找不到返回空字符串
+ * @return 图标文件的绝对路径或资源路径，找不到返回空字符串
  */
 QString getIconPath()
 {
+    // 0. Qt 资源系统路径（qrc 已注册，编译进可执行文件，始终存在）
+    const QStringList resourceCandidates = {
+        QStringLiteral(":/icons/icon_256x256.png"),
+        QStringLiteral(":/icons/icon_128x128.png"),
+        QStringLiteral(":/icons/icon_64x64.png"),
+        QStringLiteral(":/icons/icon_48x48.png"),
+        QStringLiteral(":/icons/icon_32x32.png"),
+    };
+    for (const QString& path : resourceCandidates) {
+        if (QFile::exists(path)) {
+            return path;
+        }
+    }
+
     QStringList candidates;
 
     // 1. 开发环境路径（基于当前工作目录）
@@ -210,6 +227,7 @@ void MainWindow::initUi()
     initToolbar(mainLayout);
     initContentArea(mainLayout);
     initStatusBar();
+    initOpacityControl(mainLayout);
 
     loadPersistentItems();
 }
@@ -342,6 +360,79 @@ void MainWindow::initStatusBar()
 }
 
 /**
+ * @brief 初始化底部透明度控制条（滑动条 + 百分比标签）
+ * @param parentLayout 父布局
+ */
+void MainWindow::initOpacityControl(QVBoxLayout* parentLayout)
+{
+    // 读取已保存的透明度并限制在合法范围（30~100）
+    const int savedOpacity = m_config->get(QStringLiteral("ui.opacity"), 100).toInt();
+    const int initialOpacity = qBound(30, savedOpacity, 100);
+
+    // 控制条容器（样式在 applyTheme 中随主题统一刷新）
+    m_opacityBar = new QFrame(this);
+    m_opacityBar->setObjectName(QStringLiteral("opacityBar"));
+    m_opacityBar->setFixedHeight(34);
+
+    auto* barLayout = new QHBoxLayout(m_opacityBar);
+    barLayout->setContentsMargins(10, 2, 10, 2);
+    barLayout->setSpacing(6);
+
+    // 标题标签
+    auto* titleLabel = new QLabel(QStringLiteral("透明度"), m_opacityBar);
+    titleLabel->setObjectName(QStringLiteral("opacityTitleLabel"));
+
+    // 透明度滑动条（30%~100% 不透明）
+    m_opacitySlider = new QSlider(Qt::Horizontal, m_opacityBar);
+    m_opacitySlider->setObjectName(QStringLiteral("opacitySlider"));
+    m_opacitySlider->setRange(30, 100);
+    m_opacitySlider->setValue(initialOpacity);
+    m_opacitySlider->setFixedHeight(20);
+
+    // 百分比标签（固定宽度避免滑动时布局跳动）
+    m_opacityValueLabel = new QLabel(QStringLiteral("%1%").arg(initialOpacity), m_opacityBar);
+    m_opacityValueLabel->setObjectName(QStringLiteral("opacityValueLabel"));
+    m_opacityValueLabel->setFixedWidth(38);
+    m_opacityValueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+    barLayout->addWidget(titleLabel);
+    barLayout->addWidget(m_opacitySlider, 1);
+    barLayout->addWidget(m_opacityValueLabel);
+
+    parentLayout->addWidget(m_opacityBar);
+
+    // 防抖保存定时器：滑动停止 300ms 后才写盘，避免频繁 IO
+    m_opacitySaveTimer = new QTimer(this);
+    m_opacitySaveTimer->setSingleShot(true);
+    m_opacitySaveTimer->setInterval(300);
+    connect(m_opacitySaveTimer, &QTimer::timeout, this, [this]() {
+        m_config->saveConfig();
+    });
+
+    // 滑动时实时预览透明度并更新百分比标签
+    connect(m_opacitySlider, &QSlider::valueChanged, this, [this](int value) {
+        applyOpacity(value);
+        m_opacityValueLabel->setText(QStringLiteral("%1%").arg(value));
+        m_config->set(QStringLiteral("ui.opacity"), value);
+        m_opacitySaveTimer->start();
+    });
+
+    // 应用初始透明度
+    applyOpacity(initialOpacity);
+}
+
+/**
+ * @brief 应用窗口不透明度
+ * @param percent 不透明度百分比（30~100）
+ */
+void MainWindow::applyOpacity(int percent)
+{
+    // Qt 的 setWindowOpacity 取值范围为 0.0~1.0，与百分比一一对应
+    const int clamped = qBound(30, percent, 100);
+    setWindowOpacity(clamped / 100.0);
+}
+
+/**
  * @brief 初始化系统托盘
  */
 void MainWindow::initSystemTray()
@@ -448,7 +539,7 @@ void MainWindow::startClipboardMonitoring()
 // ==================== 剪贴板事件 ====================
 
 /**
- * @brief 剪贴板内容变化处理：多行自动弹出，单行后台更新
+ * @brief 剪贴板内容变化处理：切分出多条自动弹出，仅一条后台更新
  * @param text 剪贴板新文本
  */
 void MainWindow::onClipboardChanged(const QString& text)
@@ -472,6 +563,9 @@ void MainWindow::onClipboardChanged(const QString& text)
         return;
     }
 
+    // 是否切分出多条条目（在合并持久化条目之前判断，避免被持久化条目干扰）
+    const bool splitIntoMultiple = newItems.size() > 1;
+
     // 合并持久化条目
     newItems = mergePersistentItems(newItems);
 
@@ -483,12 +577,12 @@ void MainWindow::onClipboardChanged(const QString& text)
     m_allItems = newItems;
     applySearchFilter();
 
-    // 多行内容自动弹出窗口，单行后台更新
-    if (text.contains(QLatin1Char('\n'))) {
+    // 切分出多条条目时自动弹出窗口，仅一条时后台更新
+    if (splitIntoMultiple) {
         showFromTray();
-        qInfo() << QStringLiteral("多行剪贴板，自动弹出: %1 条目").arg(newItems.size());
+        qInfo() << QStringLiteral("切分出多条，自动弹出: %1 条目").arg(newItems.size());
     } else {
-        qInfo() << QStringLiteral("单行剪贴板，后台更新: %1 条目").arg(newItems.size());
+        qInfo() << QStringLiteral("仅 1 条，后台更新");
     }
 
     m_statusLabel->setText(QStringLiteral("已解析 %1 个条目").arg(newItems.size()));
@@ -771,6 +865,14 @@ void MainWindow::showConfigWindow()
         m_configWindow = new ConfigWindow(m_config, this);
         connect(m_configWindow, &ConfigWindow::hotkeysChanged,
                 this, &MainWindow::onHotkeysChanged);
+        // 置顶/透明度实时预览（不落盘）
+        connect(m_configWindow, &ConfigWindow::alwaysOnTopPreview,
+                this, &MainWindow::onAlwaysOnTopPreview);
+        connect(m_configWindow, &ConfigWindow::opacityPreview,
+                this, [this](int percent) { applyOpacity(percent); });
+        // 配置窗口关闭后统一同步（确定 = 新值，取消 = 恢复原状）
+        connect(m_configWindow, &QDialog::finished,
+                this, &MainWindow::syncConfigWindowSettings);
         m_configWindow->setTheme(m_currentTheme);
         m_configWindow->show();
     } else {
@@ -787,6 +889,48 @@ void MainWindow::onHotkeysChanged()
     if (m_hotkeyManager != nullptr) {
         m_hotkeyManager->reloadHotkeys();
     }
+}
+
+/**
+ * @brief 窗口置顶实时预览处理（不落盘）
+ * @param on 是否置顶
+ */
+void MainWindow::onAlwaysOnTopPreview(bool on)
+{
+    // 仅实时切换窗口标志，不更新状态、不写配置；
+    // 最终置顶状态由配置窗口关闭时的 syncConfigWindowSettings 统一同步
+    const QRect geo = geometry();
+    Qt::WindowFlags flags = windowFlags();
+    flags &= ~Qt::WindowMinimizeButtonHint;
+    flags &= ~Qt::WindowMaximizeButtonHint;
+    if (on) {
+        flags |= Qt::WindowStaysOnTopHint;
+    } else {
+        flags &= ~Qt::WindowStaysOnTopHint;
+    }
+    setWindowFlags(flags);
+    setGeometry(geo);
+    show();
+}
+
+/**
+ * @brief 配置窗口关闭后，按配置重新应用窗口置顶与透明度
+ *        确定 = 应用新值，取消 = 恢复原状
+ */
+void MainWindow::syncConfigWindowSettings()
+{
+    const bool onTop = m_config->get(QStringLiteral("window.always_on_top"), true).toBool();
+    if (m_isAlwaysOnTop != onTop) {
+        // 配置值变化：走标准置顶设置流程（更新状态并保存）
+        setAlwaysOnTop(onTop);
+    } else {
+        // 值未变，但预览可能已临时修改窗口标志，强制恢复与配置一致
+        applyWindowFlags();
+        show();
+    }
+
+    // 同步透明度（预览已实时应用，这里确保与配置一致）
+    applyOpacity(m_config->get(QStringLiteral("ui.opacity"), 100).toInt());
 }
 
 // ==================== 热键操作 ====================
@@ -958,6 +1102,37 @@ void MainWindow::applyTheme()
             .arg(theme.value(QStringLiteral("toolbar_border"))));
     }
 
+    // 底部透明度控制条
+    if (m_opacityBar != nullptr) {
+        m_opacityBar->setStyleSheet(QString(
+            "QFrame#opacityBar {"
+            "    background-color: %1;"
+            "    border-top: 1px solid %2;"
+            "}"
+            "QLabel#opacityTitleLabel, QLabel#opacityValueLabel {"
+            "    color: %3;"
+            "    font-size: 11px;"
+            "    font-family: %4;"
+            "}"
+            "QSlider#opacitySlider::groove:horizontal {"
+            "    height: 4px;"
+            "    background: %5;"
+            "    border-radius: 2px;"
+            "}"
+            "QSlider#opacitySlider::handle:horizontal {"
+            "    width: 12px;"
+            "    margin: -4px 0;"
+            "    border-radius: 6px;"
+            "    background: %6;"
+            "}")
+            .arg(theme.value(QStringLiteral("toolbar_bg")))
+            .arg(theme.value(QStringLiteral("toolbar_border")))
+            .arg(theme.value(QStringLiteral("status_bar_text")))
+            .arg(fontCss)
+            .arg(theme.value(QStringLiteral("scrollbar_handle")))
+            .arg(theme.value(QStringLiteral("search_border_focus"))));
+    }
+
     // 滚动区域
     if (m_scrollArea != nullptr) {
         m_scrollArea->setStyleSheet(QString(
@@ -1065,6 +1240,7 @@ void MainWindow::autoFitWindow()
     // 组件高度常量
     const int toolbarH = 38;
     const int statusbarH = 28;
+    const int opacityBarH = 34; // 底部透明度控制条
     const int contentMargin = 8; // 4px top + 4px bottom
     const int itemH = m_itemWidgets.isEmpty() ? 36 : m_itemWidgets.first()->height();
     const int spacing = 4;
@@ -1073,7 +1249,7 @@ void MainWindow::autoFitWindow()
     const int contentH = visibleRows * itemH + (visibleRows - 1) * spacing;
 
     // 窗口总高度
-    const int newHeight = toolbarH + contentMargin + contentH + statusbarH + 4;
+    const int newHeight = toolbarH + contentMargin + contentH + statusbarH + opacityBarH + 4;
 
     // 保持当前宽度不变
     resize(width(), newHeight);

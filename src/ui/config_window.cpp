@@ -9,6 +9,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QCheckBox>
+#include <QSlider>
 #include <QMessageBox>
 #include <QFont>
 #include <QShowEvent>
@@ -111,6 +112,91 @@ QString generateEditStyle(const ThemeColors& theme)
         .arg(theme.value(QStringLiteral("edit_focus_bg")));
 }
 
+/**
+ * @brief 生成分区组框样式（QSS）
+ * @param theme 主题颜色
+ * @return 样式字符串
+ */
+QString generateGroupBoxStyle(const ThemeColors& theme)
+{
+    return QString(
+               "QGroupBox {"
+               "    border: 1px solid %1;"
+               "    border-radius: 6px;"
+               "    margin-top: 12px;"
+               "    padding-top: 18px;"
+               "    background-color: %2;"
+               "    font-weight: bold;"
+               "    color: %3;"
+               "}"
+               "QGroupBox::title {"
+               "    subcontrol-origin: margin;"
+               "    left: 14px;"
+               "    padding: 0 6px;"
+               "}")
+        .arg(theme.value(QStringLiteral("group_box_border")))
+        .arg(theme.value(QStringLiteral("group_box_bg")))
+        .arg(theme.value(QStringLiteral("group_box_title")));
+}
+
+/**
+ * @brief 生成复选框样式（QSS）
+ * @param theme 主题颜色
+ * @return 样式字符串
+ */
+QString generateCheckBoxStyle(const ThemeColors& theme)
+{
+    return QString(
+               "QCheckBox {"
+               "    color: %1;"
+               "    background: transparent;"
+               "    spacing: 8px;"
+               "}"
+               "QCheckBox::indicator {"
+               "    width: 16px;"
+               "    height: 16px;"
+               "    border: 1px solid %2;"
+               "    border-radius: 3px;"
+               "    background-color: %3;"
+               "}"
+               "QCheckBox::indicator:hover {"
+               "    border-color: %4;"
+               "}"
+               "QCheckBox::indicator:checked {"
+               "    background-color: %5;"
+               "    border-color: %6;"
+               "}")
+        .arg(theme.value(QStringLiteral("checkbox_text")))
+        .arg(theme.value(QStringLiteral("checkbox_border")))
+        .arg(theme.value(QStringLiteral("checkbox_bg")))
+        .arg(theme.value(QStringLiteral("checkbox_hover_border")))
+        .arg(theme.value(QStringLiteral("checkbox_checked_bg")))
+        .arg(theme.value(QStringLiteral("checkbox_checked_border")));
+}
+
+/**
+ * @brief 生成水平滑动条样式（QSS）
+ * @param theme 主题颜色
+ * @return 样式字符串
+ */
+QString generateSliderStyle(const ThemeColors& theme)
+{
+    return QString(
+               "QSlider::groove:horizontal {"
+               "    height: 4px;"
+               "    background: %1;"
+               "    border-radius: 2px;"
+               "}"
+               "QSlider::handle:horizontal {"
+               "    width: 14px;"
+               "    margin: -5px 0;"
+               "    border-radius: 7px;"
+               "    background: %2;"
+               "}")
+        .arg(theme.value(QStringLiteral("slider_groove")))
+        .arg(theme.value(QStringLiteral("slider_handle")));
+}
+
 } // namespace
 
 /**
@@ -130,7 +216,7 @@ ConfigWindow::ConfigWindow(ConfigManager* config, QWidget* parent)
     }
 
     setWindowTitle(QStringLiteral("多元剪贴板 - 配置"));
-    setFixedSize(480, 420);
+    setFixedSize(520, 560);
     setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
 
     m_currentTheme = m_config->get(QStringLiteral("ui.theme"), QStringLiteral("light")).toString();
@@ -169,24 +255,30 @@ void ConfigWindow::applyTheme()
 
     // 快捷键分区组框
     if (m_groupBox != nullptr) {
-        m_groupBox->setStyleSheet(QString(
-                                      "QGroupBox {"
-                                      "    border: 1px solid %1;"
-                                      "    border-radius: 6px;"
-                                      "    margin-top: 12px;"
-                                      "    padding-top: 18px;"
-                                      "    background-color: %2;"
-                                      "    font-weight: bold;"
-                                      "    color: %3;"
-                                      "}"
-                                      "QGroupBox::title {"
-                                      "    subcontrol-origin: margin;"
-                                      "    left: 14px;"
-                                      "    padding: 0 6px;"
-                                      "}")
-                                      .arg(theme.value(QStringLiteral("group_box_border")))
-                                      .arg(theme.value(QStringLiteral("group_box_bg")))
-                                      .arg(theme.value(QStringLiteral("group_box_title"))));
+        m_groupBox->setStyleSheet(generateGroupBoxStyle(theme));
+    }
+
+    // 窗口设置分区组框
+    if (m_windowGroupBox != nullptr) {
+        m_windowGroupBox->setStyleSheet(generateGroupBoxStyle(theme));
+    }
+
+    // 窗口设置复选框（自动弹出、置顶）
+    if (m_autoPopupCheckbox != nullptr) {
+        m_autoPopupCheckbox->setStyleSheet(generateCheckBoxStyle(theme));
+    }
+    if (m_alwaysOnTopCheckbox != nullptr) {
+        m_alwaysOnTopCheckbox->setStyleSheet(generateCheckBoxStyle(theme));
+    }
+
+    // 透明度滑动条与百分比标签
+    if (m_opacitySlider != nullptr) {
+        m_opacitySlider->setStyleSheet(generateSliderStyle(theme));
+    }
+    if (m_opacityValueLabel != nullptr) {
+        m_opacityValueLabel->setStyleSheet(
+            QStringLiteral("color: %1; background: transparent; font-size: 12px;")
+                .arg(theme.value(QStringLiteral("checkbox_text"))));
     }
 
     // 快捷键表格
@@ -333,20 +425,59 @@ void ConfigWindow::initHotkeySection(QVBoxLayout* parentLayout)
  */
 void ConfigWindow::initWindowSection(QVBoxLayout* parentLayout)
 {
-    auto* groupBox = new QGroupBox(QStringLiteral("窗口设置"), this);
-    groupBox->setFont(QFont(QStringLiteral("Microsoft YaHei"), 12, QFont::Bold));
+    m_windowGroupBox = new QGroupBox(QStringLiteral("窗口设置"), this);
+    m_windowGroupBox->setFont(QFont(QStringLiteral("Microsoft YaHei"), 12, QFont::Bold));
 
-    auto* layout = new QVBoxLayout(groupBox);
+    auto* layout = new QVBoxLayout(m_windowGroupBox);
     layout->setContentsMargins(10, 10, 10, 10);
     layout->setSpacing(8);
 
-    m_autoPopupCheckbox = new QCheckBox(QStringLiteral("检测到剪贴板改变时自动弹出主界面"), groupBox);
+    // 自动弹出复选框
+    m_autoPopupCheckbox = new QCheckBox(QStringLiteral("检测到剪贴板改变时自动弹出主界面"), m_windowGroupBox);
     m_autoPopupCheckbox->setFont(QFont(QStringLiteral("Microsoft YaHei"), 11));
     const bool autoPopup = m_config->get(QStringLiteral("window.auto_popup"), true).toBool();
     m_autoPopupCheckbox->setChecked(autoPopup);
     layout->addWidget(m_autoPopupCheckbox);
 
-    parentLayout->addWidget(groupBox);
+    // 窗口置顶复选框（变化时实时预览，不落盘）
+    m_alwaysOnTopCheckbox = new QCheckBox(QStringLiteral("窗口置顶显示"), m_windowGroupBox);
+    m_alwaysOnTopCheckbox->setFont(QFont(QStringLiteral("Microsoft YaHei"), 11));
+    const bool alwaysOnTop = m_config->get(QStringLiteral("window.always_on_top"), true).toBool();
+    m_alwaysOnTopCheckbox->setChecked(alwaysOnTop);
+    connect(m_alwaysOnTopCheckbox, &QCheckBox::toggled,
+            this, &ConfigWindow::alwaysOnTopPreview);
+    layout->addWidget(m_alwaysOnTopCheckbox);
+
+    // 透明度滑动条行
+    auto* opacityRow = new QHBoxLayout();
+    opacityRow->setSpacing(8);
+
+    auto* opacityTitle = new QLabel(QStringLiteral("透明度"), m_windowGroupBox);
+    opacityTitle->setFont(QFont(QStringLiteral("Microsoft YaHei"), 11));
+    opacityRow->addWidget(opacityTitle);
+
+    m_opacitySlider = new QSlider(Qt::Horizontal, m_windowGroupBox);
+    m_opacitySlider->setRange(30, 100);
+    m_opacitySlider->setFixedHeight(20);
+    const int savedOpacity = qBound(30, m_config->get(QStringLiteral("ui.opacity"), 100).toInt(), 100);
+    m_opacitySlider->setValue(savedOpacity);
+    opacityRow->addWidget(m_opacitySlider, 1);
+
+    m_opacityValueLabel = new QLabel(QStringLiteral("%1%").arg(savedOpacity), m_windowGroupBox);
+    m_opacityValueLabel->setFont(QFont(QStringLiteral("Microsoft YaHei"), 11));
+    m_opacityValueLabel->setFixedWidth(38);
+    m_opacityValueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    opacityRow->addWidget(m_opacityValueLabel);
+
+    layout->addLayout(opacityRow);
+
+    // 滑动时实时预览透明度并更新百分比标签（不落盘）
+    connect(m_opacitySlider, &QSlider::valueChanged, this, [this](int value) {
+        m_opacityValueLabel->setText(QStringLiteral("%1%").arg(value));
+        emit opacityPreview(value);
+    });
+
+    parentLayout->addWidget(m_windowGroupBox);
 }
 
 /**
@@ -413,6 +544,16 @@ void ConfigWindow::onOk()
     // 保存自动弹出配置
     if (m_autoPopupCheckbox != nullptr) {
         m_config->set(QStringLiteral("window.auto_popup"), m_autoPopupCheckbox->isChecked());
+    }
+
+    // 保存窗口置顶配置
+    if (m_alwaysOnTopCheckbox != nullptr) {
+        m_config->set(QStringLiteral("window.always_on_top"), m_alwaysOnTopCheckbox->isChecked());
+    }
+
+    // 保存透明度配置
+    if (m_opacitySlider != nullptr) {
+        m_config->set(QStringLiteral("ui.opacity"), m_opacitySlider->value());
     }
 
     m_config->saveConfig();

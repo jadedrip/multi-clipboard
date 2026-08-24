@@ -170,6 +170,14 @@ ThemeColors buildLightConfigTheme()
     t["edit_focus_bg"] = "#ffffff";
     t["edit_focus_border"] = "#0969da";
     t["hint_text"] = "#656d76";
+    t["checkbox_text"] = "#24292f";
+    t["checkbox_bg"] = "#ffffff";
+    t["checkbox_border"] = "#909399";
+    t["checkbox_hover_border"] = "#4096ff";
+    t["checkbox_checked_bg"] = "#4096ff";
+    t["checkbox_checked_border"] = "#4096ff";
+    t["slider_groove"] = "#d0d7de";
+    t["slider_handle"] = "#0969da";
     return t;
 }
 
@@ -205,6 +213,14 @@ ThemeColors buildDarkConfigTheme()
     t["edit_focus_bg"] = "#161b22";
     t["edit_focus_border"] = "#58a6ff";
     t["hint_text"] = "#8b949e";
+    t["checkbox_text"] = "#c9d1d9";
+    t["checkbox_bg"] = "#21262d";
+    t["checkbox_border"] = "#30363d";
+    t["checkbox_hover_border"] = "#58a6ff";
+    t["checkbox_checked_bg"] = "#58a6ff";
+    t["checkbox_checked_border"] = "#58a6ff";
+    t["slider_groove"] = "#30363d";
+    t["slider_handle"] = "#58a6ff";
     return t;
 }
 

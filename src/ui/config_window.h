@@ -11,6 +11,7 @@ class QTableWidget;
 class QLabel;
 class QPushButton;
 class QCheckBox;
+class QSlider;
 class HotkeyEditWidget;
 
 /**
@@ -41,6 +42,18 @@ public:
      * @brief 热键配置变化信号
      */
     Q_SIGNAL void hotkeysChanged();
+
+    /**
+     * @brief 窗口置顶实时预览信号（不落盘，由主窗口即时应用）
+     * @param on 是否置顶
+     */
+    Q_SIGNAL void alwaysOnTopPreview(bool on);
+
+    /**
+     * @brief 透明度实时预览信号（不落盘，由主窗口即时应用）
+     * @param percent 不透明度百分比（30~100）
+     */
+    Q_SIGNAL void opacityPreview(int percent);
 
     /**
      * @brief 设置主题
@@ -101,7 +114,11 @@ private:
     QTableWidget* m_table = nullptr;                                /**< 快捷键表格 */
     QHash<QString, HotkeyEditWidget*> m_hotkeyEdits;                /**< 快捷键名 -> 编辑控件 */
     QLabel* m_hintLabel = nullptr;                                  /**< 提示标签 */
+    QGroupBox* m_windowGroupBox = nullptr;                          /**< 窗口设置分区组框 */
     QCheckBox* m_autoPopupCheckbox = nullptr;                       /**< 自动弹出复选框 */
+    QCheckBox* m_alwaysOnTopCheckbox = nullptr;                     /**< 窗口置顶复选框 */
+    QSlider* m_opacitySlider = nullptr;                             /**< 透明度滑动条（30~100） */
+    QLabel* m_opacityValueLabel = nullptr;                          /**< 透明度百分比标签 */
     QPushButton* m_resetButton = nullptr;                           /**< 重置按钮 */
     QPushButton* m_cancelButton = nullptr;                          /**< 取消按钮 */
     QPushButton* m_okButton = nullptr;                              /**< 确定按钮 */
