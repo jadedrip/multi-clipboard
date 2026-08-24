@@ -41,6 +41,11 @@ QVector<Item> ContentParser::parse(const QString& text, std::optional<SplitMode>
     // 否则 split('\n') 会在 Windows 文本行尾残留 \r，导致去重/空行判断失效
     const QString normalized = normalizeLineEndings(text);
 
+    // 文件列表内容（资源管理器复制文件）不作为剪贴板条目解析
+    if (isFileListContent(normalized)) {
+        return QVector<Item>();
+    }
+
     // 确定实际使用的切分模式
     SplitMode effectiveMode = SplitMode::Smart;
     if (mode.has_value()) {
@@ -264,6 +269,25 @@ QString ContentParser::normalizeLineEndings(const QString& text)
     result.replace("\r\n", "\n");
     result.replace('\r', '\n');
     return result;
+}
+
+bool ContentParser::isFileListContent(const QString& text) const
+{
+    int nonEmptyCount = 0;
+    const QStringList lines = text.split('\n');
+    for (const QString& line : lines) {
+        const QString trimmed = line.trimmed();
+        if (trimmed.isEmpty()) {
+            continue;
+        }
+        ++nonEmptyCount;
+        // 任一行不以 file:// 开头则不是文件列表，正常解析
+        if (!trimmed.startsWith(QStringLiteral("file://"), Qt::CaseInsensitive)) {
+            return false;
+        }
+    }
+    // 至少一行非空且全部以 file:// 开头，判定为文件列表
+    return nonEmptyCount > 0;
 }
 
 // ============================================================

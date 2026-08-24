@@ -119,6 +119,17 @@ private:
     QString normalizeLineEndings(const QString& text);
 
     /**
+     * @brief 判断是否为文件列表内容
+     *
+     * Windows 资源管理器复制多个文件时，剪贴板文本为每行一个 file:// 协议的
+     * 路径列表。此类内容不应切分为剪贴板条目（避免弹出一堆 file:// 条目）。
+     *
+     * @param text 规范化后的文本
+     * @return true 表示所有非空行都以 file:// 开头
+     */
+    bool isFileListContent(const QString& text) const;
+
+    /**
      * @brief 应用后处理规则（去除空白、移除空行、去重）
      * @param items 原始条目列表
      * @return 处理后的条目列表

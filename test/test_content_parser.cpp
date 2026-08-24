@@ -51,6 +51,41 @@ private slots:
         QCOMPARE(items[3].content, QStringLiteral("line3"));
     }
 
+    // ==================== 文件列表忽略 ====================
+
+    void testParseFileListIgnored()
+    {
+        // 资源管理器复制多个文件产生的 file:// 路径列表应被忽略（不解析为条目）
+        ContentParser parser;
+        const QString text = QStringLiteral("file:///C:/dir/a.txt\nfile:///C:/dir/b.txt\nfile:///C:/dir/c.txt");
+
+        const QVector<Item> items = parser.parse(text);
+
+        QVERIFY(items.isEmpty());
+    }
+
+    void testParseSingleFileIgnored()
+    {
+        // 单个文件复制（单行 file://）同样忽略，不进入剪贴板历史
+        ContentParser parser;
+        const QString text = QStringLiteral("file:///C:/dir/a.txt");
+
+        QVERIFY(parser.parse(text).isEmpty());
+    }
+
+    void testParseMixedWithFileListLine()
+    {
+        // 混合内容（file:// 行 + 普通行）不是文件列表，应正常解析
+        ContentParser parser;
+        const QString text = QStringLiteral("file:///C:/dir/a.txt\nhello");
+
+        const QVector<Item> items = parser.parse(text);
+
+        QCOMPARE(items.size(), 3); // 原始 + 2 行
+        QCOMPARE(items[1].content, QStringLiteral("file:///C:/dir/a.txt"));
+        QCOMPARE(items[2].content, QStringLiteral("hello"));
+    }
+
     // ==================== 行尾兼容性 ====================
 
     void testParseWindowsLineEndings()

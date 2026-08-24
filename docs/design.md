@@ -111,7 +111,9 @@ struct Item {
 | `QVector<Item> parse(const QString& text, SplitMode mode = SplitMode::Smart)` | 解析文本为条目列表（含原始条目） |
 | `QVector<Item> parseFromExcel(const QString& text)` | 解析 Excel 复制文本（按列优先） |
 
-私有方法：`parseRaw`、`parseSmart`、`parseSingleColumn`、`parseSingleRow`、`resolveDelimiter`、`applyPostProcessing`、`stripWhitespace`、`removeEmptyLines`、`removeDuplicates`、`shouldSkipSplit`。
+私有方法：`parseRaw`、`parseSmart`、`parseSingleColumn`、`parseSingleRow`、`resolveDelimiter`、`applyPostProcessing`、`stripWhitespace`、`removeEmptyLines`、`removeDuplicates`、`shouldSkipSplit`、`isFileListContent`。
+
+> 特殊规则：`parse` 入口检测到文件列表内容（所有非空行均以 `file://` 开头，即资源管理器复制文件产生的剪贴板文本）时直接返回空列表，避免弹出一堆 file:// 条目。
 
 ### 4.3 ClipboardManager（剪贴板管理器）— `core/clipboard_manager.h/.cpp`
 
