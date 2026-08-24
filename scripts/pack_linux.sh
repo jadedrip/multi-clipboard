@@ -74,7 +74,9 @@ download_and_extract "linuxdeploy-plugin-qt" \
 case ":$PATH:" in
     *":/mnt/"*)
         echo "==> 检测到 WSL 环境，清理 PATH 中的 Windows 目录"
-        export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        # 注意：xmake 官方脚本安装在 ~/.local/bin（XMAKE_ROOTDIR），且必须排在
+        # /usr/local/bin 之前，否则 /usr/local/bin/xmake 引导器（缺主程序）被优先命中而崩溃（exit 255）
+        export PATH=$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
         ;;
 esac
 
@@ -145,6 +147,9 @@ if [ ! -f "$RUNTIME_FILE" ]; then
     }
 fi
 export LINUXDEPLOY_APPIMAGE_RUNTIME_FILE="$RUNTIME_FILE"
+# linuxdeploy-plugin-appimage 实际识别 LDAI_RUNTIME_FILE（strings 确认），
+# 上面旧变量名仅旧版插件使用，二者都导出保证兼容
+export LDAI_RUNTIME_FILE="$RUNTIME_FILE"
 
 # ---------- 9. 生成 AppImage ----------
 # 产物生成于当前工作目录（项目根），文件名取自 desktop 的 Name
