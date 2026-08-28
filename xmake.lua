@@ -10,7 +10,7 @@
 -- =============================================================
 
 set_project("multiclipboard")
-set_version("1.1.1")
+set_version("1.2.0")
 set_languages("c++17")
 
 -- Windows 下避免 min/max 宏与 Qt 冲突

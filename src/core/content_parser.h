@@ -54,6 +54,17 @@ public:
     QVector<Item> parse(const QString& text, std::optional<SplitMode> mode = std::nullopt);
 
     /**
+     * @brief 强制解析文本并切分为条目列表（绕过切分限制）
+     *
+     * 与 parse 相同，但忽略切分数量/长度限制，用于用户对 raw 条目主动强制解析。
+     *
+     * @param text 原始文本
+     * @param mode 切分模式，nullopt 表示使用配置中的模式
+     * @return 条目列表
+     */
+    QVector<Item> parseForced(const QString& text, std::optional<SplitMode> mode = std::nullopt);
+
+    /**
      * @brief 解析 Excel 复制的文本
      *
      * Excel 复制的文本使用制表符分隔列、换行符分隔行，按列优先顺序输出。
@@ -64,6 +75,15 @@ public:
     QVector<Item> parseFromExcel(const QString& text);
 
 private:
+    /**
+     * @brief 解析内部实现（force=true 时绕过切分限制）
+     * @param text 原始文本
+     * @param mode 切分模式，nullopt 表示使用配置中的模式
+     * @param force 是否强制解析（跳过切分限制判断）
+     * @return 条目列表
+     */
+    QVector<Item> parseInternal(const QString& text, std::optional<SplitMode> mode, bool force);
+
     /**
      * @brief 检查拆分结果是否超过限制
      * @param items 拆分后的条目列表

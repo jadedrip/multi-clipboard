@@ -7,6 +7,8 @@
 #include <QAction>
 #include <QMouseEvent>
 #include <QContextMenuEvent>
+#include <QInputDialog>
+#include <QLineEdit>
 #include <QSizePolicy>
 #include <QFont>
 #include <QFontDatabase>
@@ -365,7 +367,7 @@ void ItemWidget::initUi()
 
     // 内容标签（自动截断）
     const int fontSize = m_config->get(QStringLiteral("ui.font_size"), 10).toInt();
-    m_contentLabel = new ElideLabel(m_item.content, this);
+    m_contentLabel = new ElideLabel(makeDisplayText(), this);
     m_contentLabel->setFont(QFont(fontFamily, fontSize));
     m_contentLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     m_contentLabel->setAttribute(Qt::WA_TransparentForMouseEvents, true);
@@ -388,15 +390,27 @@ void ItemWidget::initUi()
 }
 
 /**
+ * @brief 生成内容标签显示文本（带备注前缀 "[备注] 内容"）
+ * @return 显示文本
+ */
+QString ItemWidget::makeDisplayText() const
+{
+    if (m_item.note.isEmpty()) {
+        return m_item.content;
+    }
+    return QStringLiteral("[%1] %2").arg(m_item.note, m_item.content);
+}
+
+/**
  * @brief 更新 tooltip，鼠标悬停时显示完整文本内容
  */
 void ItemWidget::updateTooltip()
 {
-    const QString content = m_item.content;
+    const QString display = makeDisplayText();
     const QString elided = m_contentLabel->displayText();
-    if (elided != content || content.contains('\n')) {
+    if (elided != display || display.contains('\n')) {
         QString prefix = m_item.raw ? QStringLiteral("[原始] ") : QString();
-        setToolTip(prefix + content);
+        setToolTip(prefix + display);
     } else {
         setToolTip(QString());
     }
@@ -559,6 +573,9 @@ void ItemWidget::mousePressEvent(QMouseEvent* event)
     if (event->button() == Qt::LeftButton) {
         m_pressPos = event->pos();
         m_isDragging = false;
+        // 显式接受并终止传播，避免事件冒泡触发窗体拖拽过滤器
+        event->accept();
+        return;
     }
     QFrame::mousePressEvent(event);
 }
@@ -576,6 +593,9 @@ void ItemWidget::mouseMoveEvent(QMouseEvent* event)
             m_isDragging = true;
             startDrag();
         }
+        // 显式接受并终止传播，避免事件冒泡触发窗体拖拽过滤器
+        event->accept();
+        return;
     }
     QFrame::mouseMoveEvent(event);
 }
@@ -589,6 +609,9 @@ void ItemWidget::mouseDoubleClickEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton) {
         onDoubleClick();
+        // 显式接受并终止传播，避免事件冒泡触发窗体拖拽过滤器
+        event->accept();
+        return;
     }
     QFrame::mouseDoubleClickEvent(event);
 }
@@ -645,7 +668,7 @@ void ItemWidget::startDrag()
 }
 
 /**
- * @brief 右键菜单事件：标记使用状态、复制、纯文本粘贴
+ * @brief 右键菜单事件：标记使用状态、复制、添加备注、解析原始条目、纯文本粘贴
  */
 void ItemWidget::contextMenuEvent(QContextMenuEvent* event)
 {
@@ -665,10 +688,88 @@ void ItemWidget::contextMenuEvent(QContextMenuEvent* event)
 
     menu.addSeparator();
 
+    // 添加/修改备注（设置备注的非常驻条目自动转为常驻）
+    QAction* noteAction = menu.addAction(m_item.note.isEmpty()
+                                             ? QStringLiteral("添加备注")
+                                             : QStringLiteral("修改备注"));
+    connect(noteAction, &QAction::triggered, this, &ItemWidget::addNote);
+
+    // 原始条目支持强制解析为多条（绕过切分限制）
+    if (m_item.raw) {
+        QAction* parseAction = menu.addAction(QStringLiteral("解析"));
+        connect(parseAction, &QAction::triggered, this, &ItemWidget::forceParse);
+    }
+
+    menu.addSeparator();
+
+    // 从列表删除（常驻条目删除时同步删除配置，由 MainWindow 处理）
+    QAction* deleteAction = menu.addAction(QStringLiteral("从列表删除"));
+    connect(deleteAction, &QAction::triggered, this, [this]() { emit itemDeleteRequested(&m_item); });
+
+    // 一次删除所有非常驻且已复制的条目（由 MainWindow 处理）
+    QAction* deleteCopiedAction = menu.addAction(QStringLiteral("删除已复制"));
+    connect(deleteCopiedAction, &QAction::triggered, this, &ItemWidget::deleteCopiedItems);
+
+    menu.addSeparator();
+
     QAction* pastePlainAction = menu.addAction(QStringLiteral("纯文本粘贴"));
     connect(pastePlainAction, &QAction::triggered, this, [this]() { pastePlainText(); });
 
     menu.exec(event->globalPos());
+}
+
+/**
+ * @brief 添加/修改备注（弹出输入对话框，非常驻条目自动转为常驻）
+ */
+void ItemWidget::addNote()
+{
+    const QString current = m_item.note;
+    bool ok = false;
+    const QString note = QInputDialog::getText(
+        this,
+        QStringLiteral("添加备注"),
+        QStringLiteral("备注（显示在条目内容前方，留空清除备注）："),
+        QLineEdit::Normal,
+        current,
+        &ok);
+    if (!ok) {
+        return; // 用户取消
+    }
+
+    const QString trimmed = note.trimmed();
+    if (trimmed == current) {
+        return; // 备注无变化
+    }
+
+    m_item.note = trimmed;
+
+    // 设置备注的非常驻条目自动转为常驻（setChecked 触发 onPersistentChanged 发信号）
+    if (!m_item.persistent) {
+        m_item.persistent = true;
+        m_persistentCheckbox->setChecked(true);
+    }
+
+    // 更新显示与 tooltip
+    m_contentLabel->setFullText(makeDisplayText());
+    updateTooltip();
+
+    emit itemNoteRequested(&m_item);
+}
+
+/**
+ * @brief 强制解析（仅原始条目，绕过切分限制切分为多条）
+ */
+void ItemWidget::forceParse()
+{
+    emit itemForceParseRequested(&m_item);
+}
+
+/**
+ * @brief 删除所有已复制条目（发出请求信号，由 MainWindow 统一处理）
+ */
+void ItemWidget::deleteCopiedItems()
+{
+    emit itemDeleteCopiedRequested();
 }
 
 /**
@@ -704,9 +805,15 @@ void ItemWidget::copyToClipboard()
 void ItemWidget::setItem(const Item& item)
 {
     m_item = item;
-    m_contentLabel->setFullText(item.content);
+    m_contentLabel->setFullText(makeDisplayText());
     m_indexLabel->setText(QStringLiteral("%1.").arg(item.index + 1));
+
+    // 程序设置勾选状态时不触发持久化信号（仅用户交互发信号），
+    // 避免列表重建时产生冗余的写配置与副作用
+    m_persistentCheckbox->blockSignals(true);
     m_persistentCheckbox->setChecked(item.persistent);
+    m_persistentCheckbox->blockSignals(false);
+
     updateTooltip();
     updateStatusDisplay();
 }

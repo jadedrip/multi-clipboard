@@ -664,6 +664,10 @@ void MainWindow::displayItems()
         connect(widget, &ItemWidget::itemUnused, this, &MainWindow::onItemUnused);
         connect(widget, &ItemWidget::itemCopied, this, &MainWindow::onItemCopied);
         connect(widget, &ItemWidget::itemPersistentChanged, this, &MainWindow::onItemPersistentChanged);
+        connect(widget, &ItemWidget::itemNoteRequested, this, &MainWindow::onItemNoteRequested);
+        connect(widget, &ItemWidget::itemForceParseRequested, this, &MainWindow::onItemForceParseRequested);
+        connect(widget, &ItemWidget::itemDeleteRequested, this, &MainWindow::onItemDeleteRequested);
+        connect(widget, &ItemWidget::itemDeleteCopiedRequested, this, &MainWindow::onDeleteCopiedRequested);
 
         // 搜索匹配时正常显示，不匹配时淡化
         if (!m_searchText.isEmpty()) {
@@ -766,6 +770,7 @@ void MainWindow::loadPersistentItems()
         Item item;
         item.id = QStringLiteral("persistent_%1").arg(idx);
         item.content = data.value(QStringLiteral("content")).toString();
+        item.note = data.value(QStringLiteral("note")).toString();
         item.index = idx;
         item.persistent = true;
         m_items.append(item);
@@ -792,11 +797,18 @@ QVector<Item> MainWindow::mergePersistentItems(const QVector<Item>& newItems)
         }
     }
 
-    // 新条目中与持久化内容相同的标记为持久化
+    // 新条目中与持久化内容相同的标记为持久化，并继承备注
     QVector<Item> merged = newItems;
     for (Item& item : merged) {
         if (persistentContents.contains(item.content)) {
             item.persistent = true;
+            // 从旧持久化条目继承备注
+            for (const Item& oldItem : m_items) {
+                if (oldItem.persistent && oldItem.content == item.content) {
+                    item.note = oldItem.note;
+                    break;
+                }
+            }
         }
     }
 
@@ -838,16 +850,144 @@ QVector<Item> MainWindow::mergePersistentItems(const QVector<Item>& newItems)
 
 /**
  * @brief 条目持久化状态变化处理
+ *
+ * 除写入配置外，同步更新内存数据源（m_items/m_allItems）中对应条目的
+ * 持久化状态，避免下次剪贴板刷新时勾选状态被覆盖丢失。
+ *
  * @param item 条目
  * @param persistent 是否持久化
  */
 void MainWindow::onItemPersistentChanged(Item* item, bool persistent)
 {
+    // 同步内存数据源：按内容匹配更新对应条目的持久化状态
+    for (Item& it : m_items) {
+        if (it.content == item->content) {
+            it.persistent = persistent;
+        }
+    }
+    for (Item& it : m_allItems) {
+        if (it.content == item->content) {
+            it.persistent = persistent;
+        }
+    }
+
     if (persistent) {
         m_config->addPersistentItem(item->content);
     } else {
         m_config->removePersistentItem(item->content);
     }
+}
+
+/**
+ * @brief 条目备注变化处理：同步内存数据源并保存到配置
+ * @param item 条目
+ */
+void MainWindow::onItemNoteRequested(Item* item)
+{
+    // 同步内存数据源：按内容匹配更新对应条目的备注
+    for (Item& it : m_items) {
+        if (it.content == item->content) {
+            it.note = item->note;
+        }
+    }
+    for (Item& it : m_allItems) {
+        if (it.content == item->content) {
+            it.note = item->note;
+        }
+    }
+
+    m_config->setPersistentItemNote(item->content, item->note);
+}
+
+/**
+ * @brief 条目强制解析处理：绕过切分限制解析并替换当前列表
+ *
+ * 用于 raw 条目即使超过切分限制也能强制切分为多条。
+ * 解析结果替换当前列表（原 raw 条目保留为第一条）。
+ *
+ * @param item 条目
+ */
+void MainWindow::onItemForceParseRequested(Item* item)
+{
+    const QString content = item->content;
+    QVector<Item> parsed = m_contentParser->parseForced(content);
+    if (parsed.isEmpty()) {
+        m_statusLabel->setText(QStringLiteral("解析失败：没有可切分的条目"));
+        return;
+    }
+
+    qInfo() << QStringLiteral("强制解析: %1 字符 -> %2 条目").arg(content.size()).arg(parsed.size());
+
+    // 合并持久化条目并替换当前列表
+    QVector<Item> newItems = mergePersistentItems(parsed);
+
+    // 内容一致时忽略（避免重复刷新）
+    if (isSameContent(newItems)) {
+        return;
+    }
+
+    m_allItems = newItems;
+    applySearchFilter();
+
+    // 解析出多条时自动弹出窗口
+    if (parsed.size() > 1) {
+        showFromTray();
+    }
+
+    m_statusLabel->setText(QStringLiteral("已解析 %1 个条目").arg(newItems.size()));
+}
+
+/**
+ * @brief 条目删除处理：从内存列表删除并刷新，常驻条目同步删除配置
+ *
+ * 按条目标识（id）精确匹配删除，避免误删同内容的其他条目。
+ * 常驻条目删除时同步调用 removePersistentItem，防止下次剪贴板刷新被重新合并回来。
+ *
+ * @param item 条目
+ */
+void MainWindow::onItemDeleteRequested(Item* item)
+{
+    if (item == nullptr) {
+        return;
+    }
+
+    // 常驻条目删除时同步删除配置
+    if (item->persistent) {
+        m_config->removePersistentItem(item->content);
+    }
+
+    // 按 id 精确匹配，从全部条目中删除
+    const QString id = item->id;
+    m_allItems.erase(std::remove_if(m_allItems.begin(), m_allItems.end(),
+                        [&id](const Item& it) { return it.id == id; }),
+                     m_allItems.end());
+
+    qInfo() << QStringLiteral("删除条目: %1").arg(item->content.left(20));
+
+    // 刷新显示（applySearchFilter 会用 m_allItems 重建 m_items）
+    applySearchFilter();
+}
+
+/**
+ * @brief 删除所有已复制条目：删除所有非常驻且已复制的条目并刷新
+ *
+ * 常驻条目（persistent）不受影响；已复制条目通过 used 标记识别。
+ */
+void MainWindow::onDeleteCopiedRequested()
+{
+    const int before = m_allItems.size();
+    m_allItems.erase(std::remove_if(m_allItems.begin(), m_allItems.end(),
+                        [](const Item& it) { return !it.persistent && it.used; }),
+                     m_allItems.end());
+    const int removed = before - m_allItems.size();
+    if (removed == 0) {
+        m_statusLabel->setText(QStringLiteral("没有可删除的已复制条目"));
+        return;
+    }
+
+    qInfo() << QStringLiteral("删除已复制条目: %1 个").arg(removed);
+    applySearchFilter();
+    m_statusLabel->setText(QStringLiteral("已删除 %1 个已复制条目").arg(removed));
 }
 
 // ==================== 配置窗口 ====================

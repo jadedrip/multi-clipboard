@@ -110,6 +110,13 @@ public:
     void removePersistentItem(const QString& content);
 
     /**
+     * @brief 设置持久化条目的备注（内容不存在时忽略；空备注移除备注键）
+     * @param content 条目内容
+     * @param note 备注文本
+     */
+    void setPersistentItemNote(const QString& content, const QString& note);
+
+    /**
      * @brief 获取配置文件路径
      */
     QString configPath() const { return m_configPath; }

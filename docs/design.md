@@ -94,6 +94,7 @@
 struct Item {
     QString id;              // 条目唯一标识
     QString content;         // 条目内容
+    QString note;            // 备注（仅常驻条目，显示于内容前方）
     int index = 0;           // 显示顺序索引
     bool used = false;       // 是否已使用
     double usedTime = 0.0;   // 使用时间戳
@@ -110,10 +111,13 @@ struct Item {
 | `enum class SplitMode { Smart, SingleColumn, SingleRow }` | 切分模式 |
 | `QVector<Item> parse(const QString& text, SplitMode mode = SplitMode::Smart)` | 解析文本为条目列表（含原始条目） |
 | `QVector<Item> parseFromExcel(const QString& text)` | 解析 Excel 复制文本（按列优先） |
+| `QVector<Item> parseForced(const QString& text, SplitMode mode = SplitMode::Smart)` | 强制解析：绕过切分限制（超限时也切分为多条） |
 
 私有方法：`parseRaw`、`parseSmart`、`parseSingleColumn`、`parseSingleRow`、`resolveDelimiter`、`applyPostProcessing`、`stripWhitespace`、`removeEmptyLines`、`removeDuplicates`、`shouldSkipSplit`、`isFileListContent`。
 
 > 特殊规则：`parse` 入口检测到文件列表内容（所有非空行均以 `file://` 开头，即资源管理器复制文件产生的剪贴板文本）时直接返回空列表，避免弹出一堆 file:// 条目。
+
+> 强制解析：`parseForced` 与 `parse` 相同但跳过 `shouldSkipSplit` 限制，供原始条目右键"解析"使用——即使超限（超过 max_split_count / max_item_length）也强制切分为多条。
 
 ### 4.3 ClipboardManager（剪贴板管理器）— `core/clipboard_manager.h/.cpp`
 
@@ -185,11 +189,13 @@ public:
 | `void updateWindowPosition(int x, int y)` / `updateWindowSize(int w, int h)` | 更新窗口位置/大小 |
 | `bool toggleAlwaysOnTop()` | 切换置顶并返回新状态 |
 | `QJsonArray getPersistentItems()` / `addPersistentItem(content)` / `removePersistentItem(content)` | 持久化条目管理 |
+| `void setPersistentItemNote(const QString& content, const QString& note)` | 设置持久化条目备注（无备注时删除 note 键） |
 
 实现要点：
 - 内部使用 `QJsonObject` 保存配置，支持嵌套合并（默认配置 + 用户配置）。
 - 默认配置内置在代码中，用户配置缺失的项自动使用默认值。
 - 界面透明度配置键为 `ui.opacity`（整数百分比 30~100，默认 100），由主窗口底部滑动条写入。
+- 持久化条目以 `{ "content": "...", "note": "..." }` 对象存于配置 `persistent_items` 数组。
 
 ### 4.7 HotkeyManager（热键管理器）— `utils/hotkey_manager.h/.cpp`
 
@@ -236,6 +242,10 @@ public:
 - 系统托盘（置顶切换、显示、配置、主题切换、退出）
 - 剪贴板监控信号连接（切分出多条自动弹出、仅一条后台更新）
 - 持久化条目加载/合并/排序（persistent 优先、raw 其次、index 最后）
+- 持久化勾选状态同步到内存数据源（勾选后剪贴板刷新仍常驻置顶）
+- 原始条目右键"解析"：强制切分为多条并替换显示（`parseForced`）
+- 条目右键"从列表删除"：删除内存条目并刷新显示；常驻条目删除时同步删除配置（`removePersistentItem`）
+- 条目右键"删除已复制"：一次删除所有非常驻且已复制（`used`）的条目，常驻条目不受影响
 - 窗口自适应高度（最多 8 行）
 - 底部透明度控制条（`QSlider`，30%~100%：滑动实时调用 `setWindowOpacity` 预览，防抖保存 `ui.opacity`）
 - `closeEvent` 隐藏到托盘、保存窗口位置/大小
@@ -248,9 +258,11 @@ public:
 
 `ItemWidget` 继承 `QFrame`：
 - 布局：持久化复选框 + 序号标签 + 内容标签（ElideLabel）+ 状态标签
-- 信号：`itemUsed(Item*)`、`itemUnused(Item*)`、`itemCopied(Item*)`、`itemPersistentChanged(Item*, bool)`
+- 信号：`itemUsed(Item*)`、`itemUnused(Item*)`、`itemCopied(Item*)`、`itemPersistentChanged(Item*, bool)`、`itemNoteRequested(Item*)`、`itemForceParseRequested(Item*)`、`itemDeleteRequested(Item*)`、`itemDeleteCopiedRequested()`
 - 鼠标事件：按下记录位置、移动超过 5px 触发拖拽、双击复制、右键菜单
 - 样式：normal / used / raw / flash / search_dimmed 五态 × 明暗两主题
+- 备注显示：常驻条目有备注时，内容标签显示为 `[备注] 内容`（备注醒目色标签位于内容前方）
+- 右键菜单：标记使用 / 复制 / 添加备注（非常驻条目设置备注时自动转为常驻）/ 从列表删除 / 删除已复制（一次删除所有非常驻且已复制的条目）/ 纯文本粘贴；原始条目（raw）额外提供"解析"（强制切分多条）
 
 `ElideLabel` 继承 `QLabel`：paintEvent 中用 `QFontMetrics::elidedText` 截断文本，多行只显示首行加 `...`。
 

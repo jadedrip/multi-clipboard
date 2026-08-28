@@ -1,4 +1,5 @@
 #include <QtTest/QtTest>
+#include <QStringList>
 
 #include "core/content_parser.h"
 #include "utils/config_manager.h"
@@ -208,6 +209,78 @@ private slots:
         const QVector<Item> items = parser.parse(QString());
 
         QCOMPARE(items.size(), 0);
+    }
+
+    // ==================== 强制解析 ====================
+
+    void testParseForcedOverSplitCount()
+    {
+        // 超过切分数量限制：parse 仅返回原始条目，parseForced 强制切分为多条
+        ContentParser parser;
+        QStringList lines;
+        for (int i = 1; i <= 11; ++i) {
+            lines << QStringLiteral("line%1").arg(i);
+        }
+        const QString text = lines.join('\n');
+
+        // 正常解析：仅保留原始条目（超出默认 10 条限制）
+        const QVector<Item> normalItems = parser.parse(text);
+        QCOMPARE(normalItems.size(), 1);
+        QVERIFY(normalItems[0].raw);
+        QCOMPARE(normalItems[0].content, text);
+
+        // 强制解析：切分为原始 + 11 行
+        const QVector<Item> forcedItems = parser.parseForced(text);
+        QCOMPARE(forcedItems.size(), 12);
+        QVERIFY(forcedItems[0].raw);
+        QCOMPARE(forcedItems[1].content, QStringLiteral("line1"));
+        QCOMPARE(forcedItems[2].content, QStringLiteral("line2"));
+        QCOMPARE(forcedItems[11].content, QStringLiteral("line11"));
+    }
+
+    void testParseForcedOverItemLength()
+    {
+        // 超过单条目长度限制：parse 仅返回原始条目，parseForced 强制切分
+        ContentParser parser;
+        const QString longLine = QString(120, QLatin1Char('a'));
+        const QString text = QStringLiteral("short\n%1").arg(longLine);
+
+        // 正常解析：含超长条目，仅保留原始条目
+        const QVector<Item> normalItems = parser.parse(text);
+        QCOMPARE(normalItems.size(), 1);
+        QVERIFY(normalItems[0].raw);
+
+        // 强制解析：切分为原始 + short + 超长行
+        const QVector<Item> forcedItems = parser.parseForced(text);
+        QCOMPARE(forcedItems.size(), 3);
+        QVERIFY(forcedItems[0].raw);
+        QCOMPARE(forcedItems[1].content, QStringLiteral("short"));
+        QCOMPARE(forcedItems[2].content, longLine);
+    }
+
+    void testParseForcedFileListStillIgnored()
+    {
+        // 强制解析同样忽略文件列表内容（file:// 不是可切分条目）
+        ContentParser parser;
+        const QString text = QStringLiteral("file:///C:/dir/a.txt\nfile:///C:/dir/b.txt");
+
+        QVERIFY(parser.parseForced(text).isEmpty());
+    }
+
+    void testParseForcedSameAsParseWithinLimits()
+    {
+        // 未超过限制时，强制解析结果与正常解析一致
+        ContentParser parser;
+        const QString text = QStringLiteral("a\tb\tc\nd\te\tf");
+
+        const QVector<Item> forcedItems = parser.parseForced(text);
+        const QVector<Item> normalItems = parser.parse(text);
+
+        QCOMPARE(forcedItems.size(), normalItems.size());
+        for (int i = 0; i < normalItems.size(); ++i) {
+            QCOMPARE(forcedItems[i].content, normalItems[i].content);
+            QCOMPARE(forcedItems[i].raw, normalItems[i].raw);
+        }
     }
 
     // ==================== Excel 格式 ====================

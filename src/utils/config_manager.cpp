@@ -1,6 +1,7 @@
 #include "config_manager.h"
 
 #include <QCoreApplication>
+#include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -26,7 +27,6 @@ QJsonObject buildDefaultConfig()
     QJsonObject clipboard;
     clipboard["monitor_interval"] = 500;
     clipboard["debounce_delay"] = 300;
-    clipboard["max_history"] = 10;
 
     QJsonObject parsing;
     parsing["split_mode"] = "smart";
@@ -44,8 +44,6 @@ QJsonObject buildDefaultConfig()
     ui["font_size"] = 10;
     ui["theme"] = "light";
     ui["opacity"] = 100;                        // 窗口不透明度百分比（30~100，100 为完全不透明）
-    ui["show_status_bar"] = true;
-    ui["show_toolbar"] = true;
     ui["mark_used_after_double_click"] = true;
 
     QJsonObject shortcuts;
@@ -162,6 +160,14 @@ void ConfigManager::saveConfig()
         const QJsonDocument doc(m_config);
         file.write(doc.toJson(QJsonDocument::Indented));
         file.close();
+        if (file.error() != QFileDevice::NoError) {
+            qWarning() << QStringLiteral("配置写入失败: %1，错误: %2")
+                              .arg(m_configPath, file.errorString());
+        }
+    } else {
+        // 写入失败（如沙箱/只读目录限制）时记录日志，方便定位配置无法持久化的问题
+        qWarning() << QStringLiteral("配置保存失败，无法打开配置文件: %1，错误: %2")
+                          .arg(m_configPath, file.errorString());
     }
 }
 
@@ -293,4 +299,26 @@ void ConfigManager::removePersistentItem(const QString& content)
         }
     }
     savePersistentItems(filtered);
+}
+
+void ConfigManager::setPersistentItemNote(const QString& content, const QString& note)
+{
+    const QJsonArray items = getPersistentItems();
+    QJsonArray newItems;
+    bool found = false;
+    for (const QJsonValue& value : items) {
+        QJsonObject item = value.toObject();
+        if (item.value("content").toString() == content) {
+            if (note.isEmpty()) {
+                item.remove("note"); // 空备注移除备注键
+            } else {
+                item["note"] = note;
+            }
+            found = true;
+        }
+        newItems.append(item);
+    }
+    if (found) {
+        savePersistentItems(newItems);
+    }
 }

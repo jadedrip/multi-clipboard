@@ -19,8 +19,8 @@ class QWidget;
  *    调用 move() 实时移动窗口；
  * 3. 左键释放后结束拖拽。
  *
- * 点击条目卡片等子控件时，事件由子控件自行消费，不会传播到过滤器，
- * 因此条目自身的拖拽逻辑与窗体移动互不干扰。
+ * 按下位置落在条目卡片（ItemWidget）上时不触发窗体拖拽，避免与
+ * 条目自身的拖拽逻辑冲突（拖动条目时窗体不应随之移动）。
  */
 class WindowDragFilter : public QObject
 {
@@ -45,6 +45,14 @@ protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
+    /**
+     * @brief 判断鼠标位置是否落在条目卡片（ItemWidget）上
+     * @param watched 被监视部件
+     * @param pos 被监视部件内的坐标
+     * @return true 表示落在条目卡片上，不应触发窗体拖拽
+     */
+    bool isOnItemWidget(QObject* watched, const QPoint& pos) const;
+
     QWidget* m_targetWindow = nullptr;  /**< 要移动的目标窗口 */
     QPoint m_pressGlobalPos;            /**< 按下时鼠标的全局坐标 */
     QPoint m_pressWindowPos;            /**< 按下时目标窗口的位置 */

@@ -37,6 +37,16 @@ ContentParser::~ContentParser() = default;
 
 QVector<Item> ContentParser::parse(const QString& text, std::optional<SplitMode> mode)
 {
+    return parseInternal(text, mode, false);
+}
+
+QVector<Item> ContentParser::parseForced(const QString& text, std::optional<SplitMode> mode)
+{
+    return parseInternal(text, mode, true);
+}
+
+QVector<Item> ContentParser::parseInternal(const QString& text, std::optional<SplitMode> mode, bool force)
+{
     // 统一规范化行尾：\r\n 与 \r 均转为 \n，保证 Windows/Unix/旧 Mac 文本兼容
     // 否则 split('\n') 会在 Windows 文本行尾残留 \r，导致去重/空行判断失效
     const QString normalized = normalizeLineEndings(text);
@@ -75,8 +85,8 @@ QVector<Item> ContentParser::parse(const QString& text, std::optional<SplitMode>
     // 应用后处理
     items = applyPostProcessing(items);
 
-    // 如果拆分结果超过限制，则不拆分，只保留原始条目
-    if (shouldSkipSplit(items)) {
+    // 如果拆分结果超过限制（且非强制解析），则不拆分，只保留原始条目
+    if (!force && shouldSkipSplit(items)) {
         QVector<Item> rawItems = parseRaw(normalized, 0);
         // 如果 parseRaw 返回空（单行纯文本），则手动创建一个原始条目
         if (rawItems.isEmpty() && !normalized.trimmed().isEmpty()) {

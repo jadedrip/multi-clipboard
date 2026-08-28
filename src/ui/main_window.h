@@ -253,6 +253,29 @@ private:
      */
     void onItemPersistentChanged(Item* item, bool persistent);
 
+    /**
+     * @brief 条目备注变化处理：同步内存数据源并保存到配置
+     * @param item 条目
+     */
+    void onItemNoteRequested(Item* item);
+
+    /**
+     * @brief 条目强制解析处理：绕过切分限制解析并替换当前列表
+     * @param item 条目
+     */
+    void onItemForceParseRequested(Item* item);
+
+    /**
+     * @brief 条目删除处理：从内存列表删除并刷新，常驻条目同步删除配置
+     * @param item 条目
+     */
+    void onItemDeleteRequested(Item* item);
+
+    /**
+     * @brief 删除所有已复制条目：删除所有非常驻且已复制的条目并刷新
+     */
+    void onDeleteCopiedRequested();
+
     // ==================== 配置窗口 ====================
 
     /**

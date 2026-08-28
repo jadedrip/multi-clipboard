@@ -71,6 +71,26 @@ public:
     Q_SIGNAL void itemPersistentChanged(Item* item, bool persistent);
 
     /**
+     * @brief 条目备注变化信号（MainWindow 负责持久化保存）
+     */
+    Q_SIGNAL void itemNoteRequested(Item* item);
+
+    /**
+     * @brief 条目强制解析请求信号（MainWindow 负责切分并替换显示）
+     */
+    Q_SIGNAL void itemForceParseRequested(Item* item);
+
+    /**
+     * @brief 条目删除请求信号（MainWindow 负责从列表与配置中删除）
+     */
+    Q_SIGNAL void itemDeleteRequested(Item* item);
+
+    /**
+     * @brief 删除所有已复制条目请求信号（MainWindow 负责删除所有非常驻且已复制的条目）
+     */
+    Q_SIGNAL void itemDeleteCopiedRequested();
+
+    /**
      * @brief 设置主题
      * @param theme 主题名称，"light" 或 "dark"
      */
@@ -203,6 +223,27 @@ private:
      * @brief 持久化复选框状态变化处理
      */
     void onPersistentChanged(int state);
+
+    /**
+     * @brief 生成内容标签显示文本（带备注前缀 "[备注] 内容"）
+     * @return 显示文本
+     */
+    QString makeDisplayText() const;
+
+    /**
+     * @brief 添加/修改备注（弹出输入对话框，非常驻条目自动转为常驻）
+     */
+    void addNote();
+
+    /**
+     * @brief 强制解析（仅原始条目，绕过切分限制切分为多条）
+     */
+    void forceParse();
+
+    /**
+     * @brief 删除所有已复制条目（发出请求信号，由 MainWindow 统一处理）
+     */
+    void deleteCopiedItems();
 
     Item m_item;                                            /**< 条目数据 */
     ConfigManager* m_config = nullptr;                      /**< 配置管理器指针 */

@@ -11,6 +11,7 @@ struct Item
 {
     QString id;                 /**< 条目唯一标识 */
     QString content;            /**< 条目内容 */
+    QString note;               /**< 备注（仅常驻条目，显示于内容前方） */
     int index = 0;              /**< 显示顺序索引（从 0 开始） */
     bool used = false;          /**< 是否已使用 */
     double usedTime = 0.0;      /**< 使用时间戳（Unix 秒） */
