@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QHash>
+#include <QList>
 #include <QPair>
 #include <functional>
 #include <thread>
@@ -76,7 +77,8 @@ private:
     void eventLoop(const std::function<bool(int)>& callback);
 
     Display* m_display = nullptr;                               /**< X11 显示连接 */
-    QHash<int, QPair<quint32, quint32>> m_hotkeyCallbacks;      /**< 已注册热键表（id -> (modifiers, keycode)） */
+    QHash<int, QPair<quint32, quint32>> m_hotkeyCallbacks;      /**< 已注册热键表（id -> (基础修饰键, keycode)），用于事件匹配 */
+    QHash<int, QList<QPair<quint32, quint32>>> m_registeredGrabs; /**< 实际注册的 grab 列表（id -> [(修饰键变体, keycode)]），用于解除注册 */
     std::function<bool(int)> m_callback;                        /**< 热键回调 */
     bool m_listenerRunning = false;                             /**< 事件循环运行标志 */
     std::thread* m_listenerThread = nullptr;                    /**< 事件循环线程 */

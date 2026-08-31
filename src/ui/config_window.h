@@ -12,6 +12,7 @@ class QLabel;
 class QPushButton;
 class QCheckBox;
 class QSlider;
+class QSpinBox;
 class HotkeyEditWidget;
 
 /**
@@ -116,6 +117,7 @@ private:
     QLabel* m_hintLabel = nullptr;                                  /**< 提示标签 */
     QGroupBox* m_windowGroupBox = nullptr;                          /**< 窗口设置分区组框 */
     QCheckBox* m_autoPopupCheckbox = nullptr;                       /**< 自动弹出复选框 */
+    QSpinBox* m_autoPopupMinSpin = nullptr;                         /**< 自动弹出最小条目数（非常驻条目数小于等于该值时不弹出，默认 3） */
     QCheckBox* m_alwaysOnTopCheckbox = nullptr;                     /**< 窗口置顶复选框 */
     QSlider* m_opacitySlider = nullptr;                             /**< 透明度滑动条（30~100） */
     QLabel* m_opacityValueLabel = nullptr;                          /**< 透明度百分比标签 */

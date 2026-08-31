@@ -10,6 +10,7 @@
 #include <QPushButton>
 #include <QCheckBox>
 #include <QSlider>
+#include <QSpinBox>
 #include <QMessageBox>
 #include <QFont>
 #include <QShowEvent>
@@ -439,6 +440,28 @@ void ConfigWindow::initWindowSection(QVBoxLayout* parentLayout)
     m_autoPopupCheckbox->setChecked(autoPopup);
     layout->addWidget(m_autoPopupCheckbox);
 
+    // 自动弹出最小条目数（非常驻条目数小于等于该值时仅后台更新，不弹出）
+    auto* minItemsRow = new QHBoxLayout();
+    minItemsRow->setSpacing(8);
+
+    auto* minItemsLabel = new QLabel(QStringLiteral("自动弹出最小条目数"), m_windowGroupBox);
+    minItemsLabel->setFont(QFont(QStringLiteral("Microsoft YaHei"), 11));
+    minItemsRow->addWidget(minItemsLabel);
+
+    m_autoPopupMinSpin = new QSpinBox(m_windowGroupBox);
+    m_autoPopupMinSpin->setRange(1, 10);
+    m_autoPopupMinSpin->setFont(QFont(QStringLiteral("Microsoft YaHei"), 11));
+    const int savedMinItems = qBound(1, m_config->get(QStringLiteral("window.auto_popup_min_items"), 3).toInt(), 10);
+    m_autoPopupMinSpin->setValue(savedMinItems);
+    m_autoPopupMinSpin->setToolTip(QStringLiteral("本次解析出的非常驻条目数小于等于该值时，不自动弹出窗口（常驻条目不参与计数）"));
+    minItemsRow->addWidget(m_autoPopupMinSpin);
+
+    auto* minItemsHint = new QLabel(QStringLiteral("条（非常驻）"), m_windowGroupBox);
+    minItemsHint->setFont(QFont(QStringLiteral("Microsoft YaHei"), 11));
+    minItemsRow->addWidget(minItemsHint);
+    minItemsRow->addStretch(1);
+    layout->addLayout(minItemsRow);
+
     // 窗口置顶复选框（变化时实时预览，不落盘）
     m_alwaysOnTopCheckbox = new QCheckBox(QStringLiteral("窗口置顶显示"), m_windowGroupBox);
     m_alwaysOnTopCheckbox->setFont(QFont(QStringLiteral("Microsoft YaHei"), 11));
@@ -544,6 +567,9 @@ void ConfigWindow::onOk()
     // 保存自动弹出配置
     if (m_autoPopupCheckbox != nullptr) {
         m_config->set(QStringLiteral("window.auto_popup"), m_autoPopupCheckbox->isChecked());
+    }
+    if (m_autoPopupMinSpin != nullptr) {
+        m_config->set(QStringLiteral("window.auto_popup_min_items"), m_autoPopupMinSpin->value());
     }
 
     // 保存窗口置顶配置

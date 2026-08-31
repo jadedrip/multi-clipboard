@@ -300,6 +300,53 @@ bool ContentParser::isFileListContent(const QString& text) const
     return nonEmptyCount > 0;
 }
 
+bool ContentParser::isMultiRowTable(const QString& text) const
+{
+    int tabLineCount = 0;
+    const QStringList lines = text.split('\n', Qt::SkipEmptyParts);
+    for (const QString& line : lines) {
+        // 行内含制表符即视为表格数据行
+        if (line.contains('\t')) {
+            ++tabLineCount;
+        }
+    }
+    // 至少 2 行含制表符才判定为多行表格，避免单行单元格被误判
+    return tabLineCount >= 2;
+}
+
+QVector<QVector<Item>> ContentParser::parseTableRows(const QString& text)
+{
+    QVector<QVector<Item>> rows;
+    const QString normalized = normalizeLineEndings(text);
+
+    // 非多行表格或文件列表内容不进入表格浏览模式
+    if (isFileListContent(normalized) || !isMultiRowTable(normalized)) {
+        return rows;
+    }
+
+    const QStringList lines = normalized.split('\n', Qt::SkipEmptyParts);
+    for (const QString& line : lines) {
+        // 每行按原有智能切分逻辑独立解析，跳过空行
+        QVector<Item> rowItems = parseInternal(line, SplitMode::Smart, false);
+        if (rowItems.isEmpty()) {
+            continue;
+        }
+        // 翻页浏览模式仅显示该行切分后的条目，去掉整行的聚合原始条目
+        rowItems.erase(std::remove_if(rowItems.begin(), rowItems.end(),
+                        [](const Item& it) { return it.raw; }),
+                       rowItems.end());
+        if (rowItems.isEmpty()) {
+            continue;
+        }
+        // 行内序号连续（从 0 开始），跨行序号由主窗口统一重排
+        for (int i = 0; i < rowItems.size(); ++i) {
+            rowItems[i].index = i;
+        }
+        rows.append(rowItems);
+    }
+    return rows;
+}
+
 // ============================================================
 // 后处理
 // ============================================================

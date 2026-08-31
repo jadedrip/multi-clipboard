@@ -1,10 +1,12 @@
 // ============================================================
 // Linux 平台适配器实现（基于 X11）
-// 注意：本文件仅在 Q_OS_LINUX 下编译真实实现，
+// 注意：本文件仅在 Linux 编译真实实现，
 // 其他平台提供空实现以保证工程结构完整。
+// 注意：使用编译器预定义宏 __linux__（Q_OS_LINUX 需包含 Qt 头后才定义，
+// 而本判断位于所有 include 之前，无法使用）
 // ============================================================
 
-#ifdef Q_OS_LINUX
+#ifdef __linux__
 
 #include "linux_platform.h"
 
@@ -28,6 +30,28 @@ constexpr quint32 kModWin = 0x0008;
 constexpr quint32 kVkControl = 0x11;    /**< VK_CONTROL */
 constexpr quint32 kVkV = 0x56;          /**< VK_V */
 
+/**
+ * @brief X11 异步错误处理器
+ *
+ * XGrabKey 等请求的 BadAccess（热键已被占用）等错误以异步方式到达，
+ * Xlib 默认错误处理器会直接退出进程。此处仅记录错误并返回 0，
+ * 避免热键冲突时程序崩溃。
+ *
+ * @param display 出错的显示连接
+ * @param event 错误事件
+ * @return 0 表示错误已处理（不终止进程）
+ */
+int x11ErrorHandler(Display* display, XErrorEvent* event)
+{
+    char buffer[256] = { 0 };
+    XGetErrorText(display, event->error_code, buffer, sizeof(buffer) - 1);
+    qWarning() << QString("X11 请求错误: %1 (请求码=%2, 错误码=%3)")
+                      .arg(QString::fromLocal8Bit(buffer))
+                      .arg(event->request_code)
+                      .arg(event->error_code);
+    return 0;
+}
+
 } // namespace
 
 // ============================================================
@@ -36,11 +60,18 @@ constexpr quint32 kVkV = 0x56;          /**< VK_V */
 
 LinuxPlatform::LinuxPlatform()
 {
+    // Xlib 线程安全初始化：热键监听线程与主线程并发访问同一 Display，
+    // 必须在使用任何 Xlib 函数之前调用
+    XInitThreads();
+
+    // 安装错误处理器：热键冲突（BadAccess）等异步错误只记录不退出
+    XSetErrorHandler(x11ErrorHandler);
+
     m_display = XOpenDisplay(nullptr);
     if (m_display != nullptr) {
         qInfo() << "X11 显示连接成功";
     } else {
-        qWarning() << "X11 显示连接失败";
+        qWarning() << "X11 显示连接失败（若为 Wayland 会话，全局热键不受支持）";
     }
     qInfo() << "LinuxPlatform 初始化完成";
 }
@@ -73,12 +104,29 @@ bool LinuxPlatform::registerHotkey(int hotkeyId, quint32 modifiers, quint32 key)
         return false;
     }
 
-    // 在根窗口上捕获按键（GrabModeAsync）
-    XGrabKey(m_display, static_cast<KeyCode>(xKeycode), xModifiers,
-             DefaultRootWindow(m_display), True, GrabModeAsync, GrabModeAsync);
+    const Window root = DefaultRootWindow(m_display);
 
+    // X11 全局热键经典问题：CapsLock(LockMask)/NumLock(Mod2Mask) 开启时，
+    // 按键事件的修饰键状态会带上对应掩码，若只注册基础组合则热键失效。
+    // 因此对每个热键注册全部 4 种组合变体。
+    const QVector<quint32> combos = {
+        xModifiers,
+        xModifiers | LockMask,              // CapsLock 开启
+        xModifiers | Mod2Mask,              // NumLock 开启
+        xModifiers | LockMask | Mod2Mask,   // 两者均开启
+    };
+
+    QList<QPair<quint32, quint32>> grabs;
+    for (quint32 combo : combos) {
+        XGrabKey(m_display, static_cast<KeyCode>(xKeycode), combo, root,
+                 True, GrabModeAsync, GrabModeAsync);
+        grabs.append(qMakePair(combo, xKeycode));
+    }
+
+    // 记录基础组合用于事件匹配；记录全部变体用于解除注册
     m_hotkeyCallbacks[hotkeyId] = qMakePair(xModifiers, xKeycode);
-    qDebug() << QString("XGrabKey 成功: id=%1").arg(hotkeyId);
+    m_registeredGrabs[hotkeyId] = grabs;
+    qDebug() << QString("XGrabKey 注册成功: id=%1（4 种修饰键变体）").arg(hotkeyId);
     return true;
 }
 
@@ -87,14 +135,16 @@ bool LinuxPlatform::unregisterHotkey(int hotkeyId)
     if (m_display == nullptr) {
         return false;
     }
-    auto it = m_hotkeyCallbacks.find(hotkeyId);
-    if (it != m_hotkeyCallbacks.end()) {
-        XUngrabKey(m_display, static_cast<KeyCode>(it.value().second),
-                   it.value().first, DefaultRootWindow(m_display));
-        m_hotkeyCallbacks.remove(hotkeyId);
-        return true;
+    auto it = m_registeredGrabs.find(hotkeyId);
+    if (it != m_registeredGrabs.end()) {
+        const Window root = DefaultRootWindow(m_display);
+        for (const auto& grab : it.value()) {
+            XUngrabKey(m_display, static_cast<KeyCode>(grab.second), grab.first, root);
+        }
+        m_registeredGrabs.remove(hotkeyId);
     }
-    return false;
+    m_hotkeyCallbacks.remove(hotkeyId);
+    return true;
 }
 
 void LinuxPlatform::unregisterAllHotkeys()
@@ -219,7 +269,8 @@ WId LinuxPlatform::getWindowAtPosition(int x, int y)
     int rootX = 0, rootY = 0, winX = 0, winY = 0;
     quint32 mask = 0;
     if (XQueryPointer(m_display, root, &root, &child, &rootX, &rootY, &winX, &winY, &mask)) {
-        return reinterpret_cast<WId>(child != None ? child : root);
+        // 注意：Window 与 WId 在 Linux 下类型不同，需用 static_cast 转换
+        return static_cast<WId>(child != None ? child : root);
     }
     return 0;
 }
@@ -312,8 +363,11 @@ quint32 LinuxPlatform::keyToKeycode(quint32 key)
         case 0x28: keysym = XK_Down; break;
         case 0x25: keysym = XK_Left; break;
         case 0x27: keysym = XK_Right; break;
+        case 0x11: keysym = XK_Control_L; break; // VK_CONTROL
+        case 0x5B: keysym = XK_Super_L; break;   // VK_LWIN
+        case 0x5C: keysym = XK_Super_R; break;   // VK_RWIN
         default:
-            return 0;
+            break;
         }
     }
 

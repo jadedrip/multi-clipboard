@@ -74,7 +74,29 @@ public:
      */
     QVector<Item> parseFromExcel(const QString& text);
 
+    /**
+     * @brief 检测多行表格并解析为逐行条目（翻页浏览用）
+     *
+     * 多行表格：行数 ≥ 2 且至少 2 行包含制表符（\t 分隔列）。
+     * 每行按原有智能切分逻辑独立解析（含原始条目），返回值为逐行条目列表，
+     * 主窗口一次显示一行、通过翻页条切换。非表格内容返回空列表。
+     *
+     * @param text 原始文本
+     * @return 逐行条目列表；非表格内容返回空
+     */
+    QVector<QVector<Item>> parseTableRows(const QString& text);
+
 private:
+    /**
+     * @brief 判断是否为多行表格内容
+     *
+     * 多行表格：行数 ≥ 2 且至少 2 行包含制表符（\t 分隔列）。
+     *
+     * @param text 规范化后的文本
+     * @return true 表示为多行表格
+     */
+    bool isMultiRowTable(const QString& text) const;
+
     /**
      * @brief 解析内部实现（force=true 时绕过切分限制）
      * @param text 原始文本

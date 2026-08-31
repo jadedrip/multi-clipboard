@@ -23,6 +23,7 @@ QJsonObject buildDefaultConfig()
     window["y"] = 100;
     window["always_on_top"] = true;
     window["auto_popup"] = true;
+    window["auto_popup_min_items"] = 3; // 解析出的非常驻条目数小于等于该值时，不自动弹出窗口
 
     QJsonObject clipboard;
     clipboard["monitor_interval"] = 500;

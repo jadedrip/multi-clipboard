@@ -27,6 +27,7 @@
 #include <QSet>
 #include <QStringList>
 #include <QSlider>
+#include <QPushButton>
 #include <algorithm>
 
 #include "content_parser.h"
@@ -178,6 +179,7 @@ void MainWindow::initProperties()
 
     m_isAlwaysOnTop = windowConfig.value(QStringLiteral("always_on_top")).toBool(true);
     m_autoPopup = windowConfig.value(QStringLiteral("auto_popup")).toBool(true);
+    m_autoPopupMinItems = windowConfig.value(QStringLiteral("auto_popup_min_items")).toInt(3);
     m_lastCloseTime = 0;
     m_usedCounter = 0;
     m_currentTheme = m_config->get(QStringLiteral("ui.theme"), QStringLiteral("light")).toString();
@@ -226,6 +228,7 @@ void MainWindow::initUi()
 
     initToolbar(mainLayout);
     initContentArea(mainLayout);
+    initPagerBar(mainLayout);
     initStatusBar();
     initOpacityControl(mainLayout);
 
@@ -328,6 +331,58 @@ void MainWindow::initContentArea(QVBoxLayout* parentLayout)
     new WindowDragFilter(scrollContent, this, this);
 
     parentLayout->addWidget(m_scrollArea, 1);
+}
+
+/**
+ * @brief 初始化底部多行表格翻页条（◀ 第 X/Y ▶）
+ * @param parentLayout 父布局
+ */
+void MainWindow::initPagerBar(QVBoxLayout* parentLayout)
+{
+    // 翻页条容器（样式在 applyTheme 中随主题统一刷新），默认隐藏
+    m_pagerBar = new QFrame(this);
+    m_pagerBar->setObjectName(QStringLiteral("pagerBar"));
+    m_pagerBar->setFixedHeight(30);
+    m_pagerBar->setVisible(false);
+
+    auto* barLayout = new QHBoxLayout(m_pagerBar);
+    barLayout->setContentsMargins(10, 2, 10, 2);
+    barLayout->setSpacing(8);
+
+    // 上一行按钮（◀）
+    m_prevPageBtn = new QPushButton(QStringLiteral("\u25C0"), m_pagerBar);
+    m_prevPageBtn->setObjectName(QStringLiteral("pagerButton"));
+    m_prevPageBtn->setFixedSize(24, 22);
+    m_prevPageBtn->setFocusPolicy(Qt::NoFocus);
+    connect(m_prevPageBtn, &QPushButton::clicked, this, &MainWindow::onPrevPage);
+
+    // 行切换滑块（占满中间，拖动切换表格行）
+    m_pagerSlider = new QSlider(Qt::Horizontal, m_pagerBar);
+    m_pagerSlider->setObjectName(QStringLiteral("pagerSlider"));
+    m_pagerSlider->setRange(0, 0);
+    m_pagerSlider->setFocusPolicy(Qt::NoFocus);
+    connect(m_pagerSlider, &QSlider::valueChanged, this, &MainWindow::onPagerSliderChanged);
+
+    // 翻页标签（第 X/Y）
+    m_pagerLabel = new QLabel(QStringLiteral("第 1/1"), m_pagerBar);
+    m_pagerLabel->setObjectName(QStringLiteral("pagerLabel"));
+    m_pagerLabel->setAlignment(Qt::AlignCenter);
+    m_pagerLabel->setMinimumWidth(64);
+
+    // 下一行按钮（▶）
+    m_nextPageBtn = new QPushButton(QStringLiteral("\u25B6"), m_pagerBar);
+    m_nextPageBtn->setObjectName(QStringLiteral("pagerButton"));
+    m_nextPageBtn->setFixedSize(24, 22);
+    m_nextPageBtn->setFocusPolicy(Qt::NoFocus);
+    connect(m_nextPageBtn, &QPushButton::clicked, this, &MainWindow::onNextPage);
+
+    // 滚动条式布局：◀ 按钮 + 滑块占满 + 数字标签 + ▶ 按钮，充满一行
+    barLayout->addWidget(m_prevPageBtn);
+    barLayout->addWidget(m_pagerSlider, 1);
+    barLayout->addWidget(m_pagerLabel);
+    barLayout->addWidget(m_nextPageBtn);
+
+    parentLayout->addWidget(m_pagerBar);
 }
 
 /**
@@ -539,32 +594,38 @@ void MainWindow::startClipboardMonitoring()
 // ==================== 剪贴板事件 ====================
 
 /**
- * @brief 剪贴板内容变化处理：切分出多条自动弹出，仅一条后台更新
+ * @brief 剪贴板内容变化处理：解析与列表更新始终执行，满足条件时才自动弹出
  * @param text 剪贴板新文本
+ *
+ * 自动弹出与否只影响窗口显示，不影响内容解析、持久化合并与列表刷新。
  */
 void MainWindow::onClipboardChanged(const QString& text)
 {
     if (text.trimmed().isEmpty()) {
         return;
     }
-    if (!m_autoPopup) {
-        return;
-    }
-    // 关闭后 10 秒内不自动弹出
-    if (QDateTime::currentSecsSinceEpoch() - m_lastCloseTime < 10) {
-        return;
-    }
 
     qInfo() << QStringLiteral("剪贴板新内容: %1 字符").arg(text.size());
 
-    // 解析剪贴板内容
+    // 多行表格：进入表格翻页浏览模式（每行按原逻辑切分，翻页条切换行）
+    const QVector<QVector<Item>> tableRows = m_contentParser->parseTableRows(text);
+    if (!tableRows.isEmpty()) {
+        handleTableContent(tableRows);
+        return;
+    }
+
+    // 普通内容：退出表格模式
+    if (m_activeTableRowIndex >= 0) {
+        m_activeTableRowIndex = -1;
+        m_tableRows.clear();
+        updatePagerState();
+    }
+
+    // 解析剪贴板内容（与是否自动弹出无关，始终执行）
     QVector<Item> newItems = m_contentParser->parse(text);
     if (newItems.isEmpty()) {
         return;
     }
-
-    // 是否切分出多条条目（在合并持久化条目之前判断，避免被持久化条目干扰）
-    const bool splitIntoMultiple = newItems.size() > 1;
 
     // 合并持久化条目
     newItems = mergePersistentItems(newItems);
@@ -574,18 +635,73 @@ void MainWindow::onClipboardChanged(const QString& text)
         return;
     }
 
+    // 更新内存数据源并刷新界面
     m_allItems = newItems;
     applySearchFilter();
+    m_statusLabel->setText(QStringLiteral("已解析 %1 个条目").arg(newItems.size()));
+    qInfo() << QStringLiteral("已解析 %1 个条目，非常驻 %2 个")
+                   .arg(newItems.size())
+                   .arg(std::count_if(newItems.begin(), newItems.end(),
+                                      [](const Item& it) { return !it.persistent; }));
 
-    // 切分出多条条目时自动弹出窗口，仅一条时后台更新
-    if (splitIntoMultiple) {
+    // 满足自动弹出条件时才弹出窗口，否则仅后台更新
+    if (shouldAutoPopup(newItems)) {
         showFromTray();
-        qInfo() << QStringLiteral("切分出多条，自动弹出: %1 条目").arg(newItems.size());
+        qInfo() << QStringLiteral("自动弹出窗口");
     } else {
-        qInfo() << QStringLiteral("仅 1 条，后台更新");
+        qInfo() << QStringLiteral("仅后台更新（未满足自动弹出条件）");
+    }
+}
+
+/**
+ * @brief 处理多行表格内容：进入表格翻页浏览模式
+ * @param tableRows 表格逐行条目
+ */
+void MainWindow::handleTableContent(const QVector<QVector<Item>>& tableRows)
+{
+    // 表格内容一致时不刷新，保持当前翻页位置
+    if (!isSameTableContent(tableRows)) {
+        m_tableRows = tableRows;
+        m_activeTableRowIndex = -1;
+        enterTableRow(0);
+        m_statusLabel->setText(QStringLiteral("表格 %1 行，翻页浏览").arg(tableRows.size()));
+        qInfo() << QStringLiteral("多行表格: %1 行").arg(tableRows.size());
     }
 
-    m_statusLabel->setText(QStringLiteral("已解析 %1 个条目").arg(newItems.size()));
+    // 表格内容优先弹出窗口（不按非常驻条目数阈值计数，保证用户能立即翻页浏览）
+    if (m_autoPopup && QDateTime::currentSecsSinceEpoch() - m_lastCloseTime >= 10) {
+        showFromTray();
+    }
+}
+
+/**
+ * @brief 判断是否自动弹出窗口
+ * @param items 解析合并后的条目列表
+ * @return 是否弹出
+ *
+ * 同时满足以下条件才弹出：
+ * 1. 自动弹出开关开启；
+ * 2. 距上次关闭窗口超过 10 秒；
+ * 3. 本次解析出的非常驻条目数大于阈值（常驻条目不参与计数）。
+ */
+bool MainWindow::shouldAutoPopup(const QVector<Item>& items)
+{
+    // 自动弹出开关关闭时仅后台更新
+    if (!m_autoPopup) {
+        return false;
+    }
+    // 关闭后 10 秒内不自动弹出
+    if (QDateTime::currentSecsSinceEpoch() - m_lastCloseTime < 10) {
+        return false;
+    }
+    // 统计非常驻条目数（常驻条目已存在于列表，不参与计数）
+    int nonPersistentCount = 0;
+    for (const Item& it : items) {
+        if (!it.persistent) {
+            ++nonPersistentCount;
+        }
+    }
+    return nonPersistentCount > m_autoPopupMinItems;
 }
 
 /**
@@ -689,7 +805,135 @@ void MainWindow::displayItems()
     // 自动调整窗口高度适配条目数（延迟到布局完成后）
     QTimer::singleShot(0, this, &MainWindow::autoFitWindow);
 
+    updatePagerState();
+
     updateUsedCounter();
+}
+
+/**
+ * @brief 翻页条上一行处理：切换当前显示的表格行
+ */
+void MainWindow::onPrevPage()
+{
+    if (m_activeTableRowIndex <= 0) {
+        return;
+    }
+    enterTableRow(m_activeTableRowIndex - 1);
+}
+
+/**
+ * @brief 翻页条下一行处理：切换当前显示的表格行
+ */
+void MainWindow::onNextPage()
+{
+    if (m_activeTableRowIndex < 0 || m_activeTableRowIndex >= m_tableRows.size() - 1) {
+        return;
+    }
+    enterTableRow(m_activeTableRowIndex + 1);
+}
+
+/**
+ * @brief 进入指定表格行：显示该行切分后的条目并刷新列表
+ * @param rowIndex 表格行索引（0 起）
+ */
+void MainWindow::enterTableRow(int rowIndex)
+{
+    if (m_tableRows.isEmpty() || rowIndex < 0 || rowIndex >= m_tableRows.size()) {
+        return;
+    }
+
+    m_activeTableRowIndex = rowIndex;
+
+    // 显示列表 = 常驻条目（固定保持显示） + 当前行切分条目，常驻优先在前
+    m_allItems = mergePersistentItems(m_tableRows.at(rowIndex));
+
+    // 行内序号连续（从 0 开始），保持与条目组件序号一致
+    for (int i = 0; i < m_allItems.size(); ++i) {
+        m_allItems[i].index = i;
+    }
+
+    // 表格模式下搜索不跨行保留，避免旧搜索词干扰新行显示
+    m_searchText.clear();
+    m_searchEdit->clear();
+
+    applySearchFilter();
+    updatePagerState();
+
+    qInfo() << QStringLiteral("表格切换到第 %1/%2 行，%3 个条目")
+                   .arg(rowIndex + 1)
+                   .arg(m_tableRows.size())
+                   .arg(m_allItems.size());
+}
+
+/**
+ * @brief 比较新表格与当前表格内容是否一致（避免无谓刷新丢失翻页位置）
+ * @param newRows 新表格逐行条目
+ * @return 是否一致
+ */
+bool MainWindow::isSameTableContent(const QVector<QVector<Item>>& newRows) const
+{
+    if (newRows.size() != m_tableRows.size()) {
+        return false;
+    }
+    for (int r = 0; r < newRows.size(); ++r) {
+        const QVector<Item>& newRow = newRows.at(r);
+        const QVector<Item>& oldRow = m_tableRows.at(r);
+        if (newRow.size() != oldRow.size()) {
+            return false;
+        }
+        for (int i = 0; i < newRow.size(); ++i) {
+            if (newRow.at(i).content.trimmed() != oldRow.at(i).content.trimmed()) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief 翻页条滑块变化处理：切换当前显示的表格行
+ * @param value 表格行索引
+ */
+void MainWindow::onPagerSliderChanged(int value)
+{
+    if (value != m_activeTableRowIndex) {
+        enterTableRow(value);
+    }
+}
+
+/**
+ * @brief 更新翻页条状态：按当前表格行刷新滑块/标签/显隐
+ *
+ * 翻页条显示时隐藏底部透明度条（两条件互斥占用同一底部区域）。
+ */
+void MainWindow::updatePagerState()
+{
+    if (m_pagerBar == nullptr || m_opacityBar == nullptr) {
+        return;
+    }
+
+    // 非表格模式或无表格数据时隐藏翻页条，恢复透明度条
+    if (m_activeTableRowIndex < 0 || m_tableRows.isEmpty()) {
+        m_pagerBar->setVisible(false);
+        m_opacityBar->setVisible(true);
+        return;
+    }
+
+    const int total = m_tableRows.size();
+    const int current = qBound(0, m_activeTableRowIndex, total - 1);
+
+    // 同步滑块（blockSignals 避免 valueChanged 回环触发 enterTableRow）
+    m_pagerSlider->blockSignals(true);
+    m_pagerSlider->setRange(0, total - 1);
+    m_pagerSlider->setValue(current);
+    m_pagerSlider->blockSignals(false);
+
+    m_pagerLabel->setText(QStringLiteral("第 %1/%2").arg(current + 1).arg(total));
+    m_prevPageBtn->setEnabled(current > 0);
+    m_nextPageBtn->setEnabled(current < total - 1);
+
+    m_pagerBar->setVisible(true);
+    m_opacityBar->setVisible(false);
 }
 
 /**
@@ -773,6 +1017,7 @@ void MainWindow::loadPersistentItems()
         item.note = data.value(QStringLiteral("note")).toString();
         item.index = idx;
         item.persistent = true;
+        m_persistentItems.append(item);
         m_items.append(item);
         m_allItems.append(item);
     }
@@ -789,34 +1034,29 @@ void MainWindow::loadPersistentItems()
  */
 QVector<Item> MainWindow::mergePersistentItems(const QVector<Item>& newItems)
 {
-    // 收集现有持久化条目的内容集合
+    // 收集常驻条目运行时缓存的内容集合（启动加载 + 运行中勾选）
     QSet<QString> persistentContents;
-    for (const Item& item : m_items) {
-        if (item.persistent) {
-            persistentContents.insert(item.content);
-        }
+    for (const Item& item : m_persistentItems) {
+        persistentContents.insert(item.content);
     }
 
-    // 新条目中与持久化内容相同的标记为持久化，并继承备注
+    // 新条目中与常驻内容相同的标记为持久化，并继承备注
     QVector<Item> merged = newItems;
     for (Item& item : merged) {
         if (persistentContents.contains(item.content)) {
             item.persistent = true;
-            // 从旧持久化条目继承备注
-            for (const Item& oldItem : m_items) {
-                if (oldItem.persistent && oldItem.content == item.content) {
-                    item.note = oldItem.note;
+            // 从常驻缓存继承备注
+            for (const Item& p : m_persistentItems) {
+                if (p.content == item.content) {
+                    item.note = p.note;
                     break;
                 }
             }
         }
     }
 
-    // 追加未出现在新条目中的持久化条目
-    for (const Item& item : m_items) {
-        if (!item.persistent) {
-            continue;
-        }
+    // 追加未出现在新条目中的常驻条目
+    for (const Item& item : m_persistentItems) {
         bool exists = false;
         for (const Item& ni : merged) {
             if (ni.content == item.content) {
@@ -859,6 +1099,25 @@ QVector<Item> MainWindow::mergePersistentItems(const QVector<Item>& newItems)
  */
 void MainWindow::onItemPersistentChanged(Item* item, bool persistent)
 {
+    // 同步运行时常驻缓存（表格模式固定显示的依据）
+    auto pIt = std::find_if(m_persistentItems.begin(), m_persistentItems.end(),
+                            [&](const Item& p) { return p.content == item->content; });
+    if (persistent) {
+        if (pIt == m_persistentItems.end()) {
+            Item persistentItem = *item;
+            persistentItem.persistent = true;
+            m_persistentItems.append(persistentItem);
+        } else {
+            pIt->note = item->note;
+        }
+        m_config->addPersistentItem(item->content);
+    } else {
+        if (pIt != m_persistentItems.end()) {
+            m_persistentItems.erase(pIt);
+        }
+        m_config->removePersistentItem(item->content);
+    }
+
     // 同步内存数据源：按内容匹配更新对应条目的持久化状态
     for (Item& it : m_items) {
         if (it.content == item->content) {
@@ -870,12 +1129,6 @@ void MainWindow::onItemPersistentChanged(Item* item, bool persistent)
             it.persistent = persistent;
         }
     }
-
-    if (persistent) {
-        m_config->addPersistentItem(item->content);
-    } else {
-        m_config->removePersistentItem(item->content);
-    }
 }
 
 /**
@@ -884,6 +1137,14 @@ void MainWindow::onItemPersistentChanged(Item* item, bool persistent)
  */
 void MainWindow::onItemNoteRequested(Item* item)
 {
+    // 同步常驻缓存中的备注
+    for (Item& p : m_persistentItems) {
+        if (p.content == item->content) {
+            p.note = item->note;
+            break;
+        }
+    }
+
     // 同步内存数据源：按内容匹配更新对应条目的备注
     for (Item& it : m_items) {
         if (it.content == item->content) {
@@ -951,9 +1212,12 @@ void MainWindow::onItemDeleteRequested(Item* item)
         return;
     }
 
-    // 常驻条目删除时同步删除配置
+    // 常驻条目删除时同步删除配置与常驻缓存（防止合并时重新出现）
     if (item->persistent) {
         m_config->removePersistentItem(item->content);
+        m_persistentItems.erase(std::remove_if(m_persistentItems.begin(), m_persistentItems.end(),
+                                  [&](const Item& p) { return p.content == item->content; }),
+                                m_persistentItems.end());
     }
 
     // 按 id 精确匹配，从全部条目中删除
@@ -961,6 +1225,17 @@ void MainWindow::onItemDeleteRequested(Item* item)
     m_allItems.erase(std::remove_if(m_allItems.begin(), m_allItems.end(),
                         [&id](const Item& it) { return it.id == id; }),
                      m_allItems.end());
+
+    // 表格模式下同步删除当前行条目，避免翻页后条目"复活"
+    if (m_activeTableRowIndex >= 0 && m_activeTableRowIndex < m_tableRows.size()) {
+        QVector<Item>& row = m_tableRows[m_activeTableRowIndex];
+        row.erase(std::remove_if(row.begin(), row.end(),
+                    [&id](const Item& it) { return it.id == id; }),
+                  row.end());
+        for (int i = 0; i < row.size(); ++i) {
+            row[i].index = i;
+        }
+    }
 
     qInfo() << QStringLiteral("删除条目: %1").arg(item->content.left(20));
 
@@ -983,6 +1258,20 @@ void MainWindow::onDeleteCopiedRequested()
     if (removed == 0) {
         m_statusLabel->setText(QStringLiteral("没有可删除的已复制条目"));
         return;
+    }
+
+    // 表格模式下当前行同步为删除后的结果（剔除常驻条目，避免翻页后"复活"或混入）
+    if (m_activeTableRowIndex >= 0 && m_activeTableRowIndex < m_tableRows.size()) {
+        QVector<Item> rowItems;
+        for (const Item& it : m_allItems) {
+            if (!it.persistent) {
+                rowItems.append(it);
+            }
+        }
+        for (int i = 0; i < rowItems.size(); ++i) {
+            rowItems[i].index = i;
+        }
+        m_tableRows[m_activeTableRowIndex] = rowItems;
     }
 
     qInfo() << QStringLiteral("删除已复制条目: %1 个").arg(removed);
@@ -1103,6 +1392,11 @@ void MainWindow::clearAllItems()
     m_itemWidgets.clear();
     m_items.clear();
     m_usedCounter = 0;
+
+    // 退出表格模式
+    m_tableRows.clear();
+    m_activeTableRowIndex = -1;
+    updatePagerState();
 
     // 重新添加底部弹性空间
     m_itemsLayout->addStretch();
@@ -1273,6 +1567,52 @@ void MainWindow::applyTheme()
             .arg(theme.value(QStringLiteral("search_border_focus"))));
     }
 
+    // 底部多行表格翻页条
+    if (m_pagerBar != nullptr) {
+        m_pagerBar->setStyleSheet(QString(
+            "QFrame#pagerBar {"
+            "    background-color: %1;"
+            "    border-top: 1px solid %2;"
+            "}"
+            "QLabel#pagerLabel {"
+            "    color: %3;"
+            "    font-size: 12px;"
+            "    font-family: %4;"
+            "}"
+            "QPushButton#pagerButton {"
+            "    background-color: transparent;"
+            "    border: 1px solid %2;"
+            "    border-radius: 4px;"
+            "    color: %3;"
+            "    font-size: 12px;"
+            "}"
+            "QPushButton#pagerButton:hover {"
+            "    background-color: %5;"
+            "}"
+            "QPushButton#pagerButton:disabled {"
+            "    color: %6;"
+            "    border-color: %6;"
+            "}"
+            "QSlider#pagerSlider::groove:horizontal {"
+            "    height: 4px;"
+            "    background: %5;"
+            "    border-radius: 2px;"
+            "}"
+            "QSlider#pagerSlider::handle:horizontal {"
+            "    width: 12px;"
+            "    margin: -4px 0;"
+            "    border-radius: 6px;"
+            "    background: %7;"
+            "}")
+            .arg(theme.value(QStringLiteral("toolbar_bg")))
+            .arg(theme.value(QStringLiteral("toolbar_border")))
+            .arg(theme.value(QStringLiteral("status_bar_text")))
+            .arg(fontCss)
+            .arg(theme.value(QStringLiteral("scrollbar_handle")))
+            .arg(theme.value(QStringLiteral("search_placeholder")))
+            .arg(theme.value(QStringLiteral("search_border_focus"))));
+    }
+
     // 滚动区域
     if (m_scrollArea != nullptr) {
         m_scrollArea->setStyleSheet(QString(
@@ -1380,7 +1720,9 @@ void MainWindow::autoFitWindow()
     // 组件高度常量
     const int toolbarH = 38;
     const int statusbarH = 28;
-    const int opacityBarH = 34; // 底部透明度控制条
+    // 翻页条与透明度条互斥显示（翻页条显示时透明度条隐藏）
+    const int opacityBarH = (m_opacityBar != nullptr && m_opacityBar->isVisible()) ? 34 : 0;
+    const int pagerBarH = (m_pagerBar != nullptr && m_pagerBar->isVisible()) ? 30 : 0;
     const int contentMargin = 8; // 4px top + 4px bottom
     const int itemH = m_itemWidgets.isEmpty() ? 36 : m_itemWidgets.first()->height();
     const int spacing = 4;
@@ -1389,7 +1731,7 @@ void MainWindow::autoFitWindow()
     const int contentH = visibleRows * itemH + (visibleRows - 1) * spacing;
 
     // 窗口总高度
-    const int newHeight = toolbarH + contentMargin + contentH + statusbarH + opacityBarH + 4;
+    const int newHeight = toolbarH + contentMargin + contentH + statusbarH + opacityBarH + pagerBarH + 4;
 
     // 保持当前宽度不变
     resize(width(), newHeight);

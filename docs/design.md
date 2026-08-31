@@ -112,8 +112,11 @@ struct Item {
 | `QVector<Item> parse(const QString& text, SplitMode mode = SplitMode::Smart)` | 解析文本为条目列表（含原始条目） |
 | `QVector<Item> parseFromExcel(const QString& text)` | 解析 Excel 复制文本（按列优先） |
 | `QVector<Item> parseForced(const QString& text, SplitMode mode = SplitMode::Smart)` | 强制解析：绕过切分限制（超限时也切分为多条） |
+| `QVector<QVector<Item>> parseTableRows(const QString& text)` | 检测多行表格并解析为逐行条目（翻页浏览用）；非表格内容返回空 |
 
-私有方法：`parseRaw`、`parseSmart`、`parseSingleColumn`、`parseSingleRow`、`resolveDelimiter`、`applyPostProcessing`、`stripWhitespace`、`removeEmptyLines`、`removeDuplicates`、`shouldSkipSplit`、`isFileListContent`。
+私有方法：`parseRaw`、`parseSmart`、`parseSingleColumn`、`parseSingleRow`、`resolveDelimiter`、`applyPostProcessing`、`stripWhitespace`、`removeEmptyLines`、`removeDuplicates`、`shouldSkipSplit`、`isFileListContent`、`isMultiRowTable`。
+
+> 多行表格规则：`parseTableRows` 检测到多行表格（行数 ≥ 2 且至少 2 行含制表符 `\t` 分隔列）时，不整段切碎，而是**逐行独立解析**：每行按原有智能切分逻辑切分为条目列表（仅保留切分后的条目，去除整行的聚合原始条目），返回逐行条目集合（`QVector<QVector<Item>>`）。主窗口一次显示一行切分后的条目，底部翻页条切换 Excel 行。行内条目序号连续，跨行序号由主窗口统一重排。仅在智能模式下检测，显式指定单列/单行模式时保持原有切分行为。
 
 > 特殊规则：`parse` 入口检测到文件列表内容（所有非空行均以 `file://` 开头，即资源管理器复制文件产生的剪贴板文本）时直接返回空列表，避免弹出一堆 file:// 条目。
 
@@ -195,6 +198,7 @@ public:
 - 内部使用 `QJsonObject` 保存配置，支持嵌套合并（默认配置 + 用户配置）。
 - 默认配置内置在代码中，用户配置缺失的项自动使用默认值。
 - 界面透明度配置键为 `ui.opacity`（整数百分比 30~100，默认 100），由主窗口底部滑动条写入。
+- 自动弹出阈值配置键为 `window.auto_popup_min_items`（默认 3）：本次解析出的非常驻条目数小于等于该值时，解析与列表更新照常进行，但不自动弹出窗口。
 - 持久化条目以 `{ "content": "...", "note": "..." }` 对象存于配置 `persistent_items` 数组。
 
 ### 4.7 HotkeyManager（热键管理器）— `utils/hotkey_manager.h/.cpp`
@@ -240,7 +244,7 @@ public:
 - 滚动区域条目列表（`ItemWidget` 数组）
 - 状态栏（已使用计数 / 搜索结果数）
 - 系统托盘（置顶切换、显示、配置、主题切换、退出）
-- 剪贴板监控信号连接（切分出多条自动弹出、仅一条后台更新）
+- 剪贴板监控信号连接：内容解析、持久化合并、列表更新**始终执行**；仅当满足自动弹出条件时才弹出窗口
 - 持久化条目加载/合并/排序（persistent 优先、raw 其次、index 最后）
 - 持久化勾选状态同步到内存数据源（勾选后剪贴板刷新仍常驻置顶）
 - 原始条目右键"解析"：强制切分为多条并替换显示（`parseForced`）
@@ -248,6 +252,10 @@ public:
 - 条目右键"删除已复制"：一次删除所有非常驻且已复制（`used`）的条目，常驻条目不受影响
 - 窗口自适应高度（最多 8 行）
 - 底部透明度控制条（`QSlider`，30%~100%：滑动实时调用 `setWindowOpacity` 预览，防抖保存 `ui.opacity`）
+- 自动弹出窗口条件（全部满足）：自动弹出开关开启（`window.auto_popup`）＋ 距上次关闭窗口超过 10 秒 ＋ 本次解析出的**非常驻条目数** > `window.auto_popup_min_items`（默认 3，常驻条目不参与计数）
+- 多行表格：检测到多行表格时进入翻页浏览模式——列表一次显示一行 Excel 行切分后的条目（不含整行聚合条目），底部翻页条切换行；翻页时清空搜索、重排行内序号、重建列表
+- 列表底部翻页条（滚动条式，充满一行）：`◀ 滑块 第 X/Y ▶`——左右按钮 + 中间行切换滑块（拖动/点击切换行） + 数字标签；仅表格浏览模式显示；显示翻页条时**隐藏底部透明度条**（两者互斥占用底部区域），退出表格模式后恢复
+- 表格内容优先自动弹出（不按非常驻条目数阈值计数），保证用户能立即翻页浏览；表格内容一致时不刷新（保持翻页位置）；复制普通内容/清空列表自动退出表格模式
 - `closeEvent` 隐藏到托盘、保存窗口位置/大小
 - 热键回调（toggleWindow / toggleAlwaysOnTop / clearAll / copyAll / pastePlain）
 - 列表空白区域拖拽移动窗体（通过 `WindowDragFilter` 事件过滤器实现）
@@ -270,10 +278,10 @@ public:
 
 `ConfigWindow` 继承 `QDialog`：
 - 快捷键配置表格（5 行 2 列：功能描述 + HotkeyEditWidget）
-- 窗口设置（自动弹出复选框、窗口置顶复选框、透明度滑动条 30%~100%）
+- 窗口设置（自动弹出复选框、自动弹出最小条目数 `QSpinBox`（n 条以下不弹出，默认 3）、窗口置顶复选框、透明度滑动条 30%~100%）
 - 按钮：重置默认 / 取消 / 确定
 - 信号：`hotkeysChanged`、`alwaysOnTopPreview(bool)`、`opacityPreview(int)`
-- 保存时写回 `shortcuts.*`、`window.auto_popup`、`window.always_on_top`、`ui.opacity`
+- 保存时写回 `shortcuts.*`、`window.auto_popup`、`window.auto_popup_min_items`、`window.always_on_top`、`ui.opacity`
 
 主窗口联动（实时预览 + 关闭时同步）：
 - 置顶复选框 / 透明度滑动条变化时实时发出 `alwaysOnTopPreview` / `opacityPreview`，主窗口即时应用（不落盘）；

@@ -52,6 +52,62 @@ private slots:
         QCOMPARE(items[3].content, QStringLiteral("line3"));
     }
 
+    // ==================== 多行表格 ====================
+
+    void testParseTableRowsMultiRow()
+    {
+        // 多行表格：每行按原逻辑切分为条目（不含整行聚合原始条目），翻页逐行浏览
+        ContentParser parser;
+        const QString text = QStringLiteral("姓名\t年龄\n张三\t25\n李四\t30");
+
+        const QVector<QVector<Item>> rows = parser.parseTableRows(text);
+
+        QCOMPARE(rows.size(), 3);
+        // 第一行：表头，切分为 2 个单元格，无 raw 聚合条目
+        QCOMPARE(rows[0].size(), 2);
+        QCOMPARE(rows[0][0].content, QStringLiteral("姓名"));
+        QCOMPARE(rows[0][1].content, QStringLiteral("年龄"));
+        // 第二行：张三/25
+        QCOMPARE(rows[1].size(), 2);
+        QCOMPARE(rows[1][0].content, QStringLiteral("张三"));
+        QCOMPARE(rows[1][1].content, QStringLiteral("25"));
+        // 第三行：李四/30
+        QCOMPARE(rows[2].size(), 2);
+        QCOMPARE(rows[2][0].content, QStringLiteral("李四"));
+        QCOMPARE(rows[2][1].content, QStringLiteral("30"));
+    }
+
+    void testParseTableRowsNotTable()
+    {
+        // 非多行表格内容返回空（单行含制表符）
+        ContentParser parser;
+
+        const QVector<QVector<Item>> rows1 = parser.parseTableRows(QStringLiteral("a\tb\tc"));
+        QVERIFY(rows1.isEmpty());
+
+        // 普通多行文本（无制表符）
+        const QVector<QVector<Item>> rows2 = parser.parseTableRows(QStringLiteral("line1\nline2"));
+        QVERIFY(rows2.isEmpty());
+
+        // 文件列表内容
+        const QVector<QVector<Item>> rows3 = parser.parseTableRows(QStringLiteral("file:///c:/a.txt\nfile:///c:/b.txt"));
+        QVERIFY(rows3.isEmpty());
+    }
+
+    void testParseTableRowsSkipEmptyLines()
+    {
+        // 空行被跳过，不参与行计数
+        ContentParser parser;
+        const QString text = QStringLiteral("a\tb\n\nc\td\n\ne\tf");
+
+        const QVector<QVector<Item>> rows = parser.parseTableRows(text);
+
+        QCOMPARE(rows.size(), 3);
+        QCOMPARE(rows[0][0].content, QStringLiteral("a"));
+        QCOMPARE(rows[1][1].content, QStringLiteral("d"));
+        QCOMPARE(rows[2][1].content, QStringLiteral("f"));
+    }
+
     // ==================== 文件列表忽略 ====================
 
     void testParseFileListIgnored()

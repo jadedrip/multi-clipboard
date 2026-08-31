@@ -10,7 +10,7 @@
 -- =============================================================
 
 set_project("multiclipboard")
-set_version("1.2.0")
+set_version("1.3.0")
 set_languages("c++17")
 
 -- Windows 下避免 min/max 宏与 Qt 冲突
@@ -29,6 +29,13 @@ add_includedirs("src", "src/core", "src/utils", "src/ui", "src/platform")
 -- Windows 平台链接系统库
 if is_plat("windows") then
     add_syslinks("user32", "shell32")
+end
+
+-- Linux 平台链接 X11 库（全局热键 XGrabKey / 键盘鼠标模拟 XTest / 错误处理 XGetErrorText）
+if is_plat("linux") then
+    add_syslinks("X11", "Xtst")
+    -- std::thread 需要链接 pthread
+    add_syslinks("pthread")
 end
 
 -- =============================================================
